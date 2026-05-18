@@ -10,31 +10,31 @@ export type InvokeOptions =
 export type SyncInvokeResult = { result: unknown; runId: string };
 export type WebhookInvokeResult = { runId: string };
 
-export function invokeAgent(
+export function invokeAction(
 	http: HttpClient,
 	name: string,
 	id: string,
 	options: { mode: 'stream'; payload?: unknown; signal?: AbortSignal },
 ): AsyncIterable<FlueEvent>;
-export function invokeAgent(
+export function invokeAction(
 	http: HttpClient,
 	name: string,
 	id: string,
 	options: { mode: 'sync'; payload?: unknown; signal?: AbortSignal },
 ): Promise<SyncInvokeResult>;
-export function invokeAgent(
+export function invokeAction(
 	http: HttpClient,
 	name: string,
 	id: string,
 	options: { mode: 'webhook'; payload?: unknown; signal?: AbortSignal },
 ): Promise<WebhookInvokeResult>;
-export function invokeAgent(
+export function invokeAction(
 	http: HttpClient,
 	name: string,
 	id: string,
 	options: InvokeOptions,
 ): Promise<SyncInvokeResult | WebhookInvokeResult> | AsyncIterable<FlueEvent> {
-	const path = `/agents/${encodeURIComponent(name)}/${encodeURIComponent(id)}`;
+	const path = `/actions/${encodeURIComponent(name)}/${encodeURIComponent(id)}`;
 	if (options.mode === 'stream') return invokeStream(http, path, options);
 	return http
 		.json<{ result?: unknown; _meta?: { runId?: string }; runId?: string }>({

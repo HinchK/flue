@@ -14,11 +14,27 @@ describe('createFlueClient', () => {
 		});
 
 		await expect(
-			client.agents.invoke('hello', 'inst-1', { mode: 'sync', payload: { name: 'Ada' } }),
+			client.actions.invoke('hello', 'inst-1', { mode: 'sync', payload: { name: 'Ada' } }),
 		).resolves.toEqual({ result: { ok: true }, runId: 'run_1' });
 		expect(seen).toHaveLength(1);
-		expect(new URL(seen[0]?.url ?? '').pathname).toBe('/agents/hello/inst-1');
+		expect(new URL(seen[0]?.url ?? '').pathname).toBe('/actions/hello/inst-1');
 		expect(seen[0]?.method).toBe('POST');
+	});
+
+	it('throws a focused migration error for agents.invoke', () => {
+		let called = false;
+		const client = createFlueClient({
+			baseUrl: 'https://flue.test',
+			fetch: async () => {
+				called = true;
+				return Response.json({});
+			},
+		});
+
+		expect(() => client.agents.invoke('hello', 'inst-1', { mode: 'sync' })).toThrow(
+			'client.agents.invoke() was renamed to client.actions.invoke().',
+		);
+		expect(called).toBe(false);
 	});
 
 	it('builds admin list queries', async () => {

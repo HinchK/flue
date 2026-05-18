@@ -1,5 +1,5 @@
 import { HttpClient, type HttpClientOptions, type RequestHeaders } from './http.ts';
-import { invokeAgent, type SyncInvokeResult, type WebhookInvokeResult } from './public/invoke.ts';
+import { invokeAction, type SyncInvokeResult, type WebhookInvokeResult } from './public/invoke.ts';
 import { type StreamOptions, streamRunEvents } from './public/stream.ts';
 import type { ActionManifestEntry, InstanceSummary, ListResponse, RunPointer, RunRecord, RunStatus } from './types.ts';
 
@@ -15,6 +15,11 @@ export interface FlueClient {
 		get(runId: string): Promise<RunRecord>;
 		events(runId: string, options?: { after?: number; types?: string[]; limit?: number }): Promise<{ events: unknown[] }>;
 		stream(runId: string, options?: StreamOptions): AsyncIterable<import('./types.ts').FlueEvent>;
+	};
+	actions: {
+		invoke(name: string, id: string, options: { mode: 'stream'; payload?: unknown; signal?: AbortSignal }): AsyncIterable<import('./types.ts').FlueEvent>;
+		invoke(name: string, id: string, options: { mode: 'sync'; payload?: unknown; signal?: AbortSignal }): Promise<SyncInvokeResult>;
+		invoke(name: string, id: string, options: { mode: 'webhook'; payload?: unknown; signal?: AbortSignal }): Promise<WebhookInvokeResult>;
 	};
 	agents: {
 		invoke(name: string, id: string, options: { mode: 'stream'; payload?: unknown; signal?: AbortSignal }): AsyncIterable<import('./types.ts').FlueEvent>;
@@ -55,9 +60,14 @@ export function createFlueClient(options: CreateFlueClientOptions): FlueClient {
 				}),
 			stream: (runId, opts) => streamRunEvents(http, runId, opts),
 		},
+		actions: {
+			invoke: ((name: string, id: string, opts: Parameters<typeof invokeAction>[3]) =>
+				invokeAction(http, name, id, opts)) as FlueClient['actions']['invoke'],
+		},
 		agents: {
-			invoke: ((name: string, id: string, opts: Parameters<typeof invokeAgent>[3]) =>
-				invokeAgent(http, name, id, opts)) as FlueClient['agents']['invoke'],
+			invoke: (() => {
+				throw new Error('client.agents.invoke() was renamed to client.actions.invoke().');
+			}) as FlueClient['agents']['invoke'],
 		},
 		admin: {
 			actions: {
