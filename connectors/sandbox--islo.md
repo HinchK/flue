@@ -56,10 +56,11 @@ Write this file verbatim. Do not "improve" it — it conforms to the published
  * ```ts
  * import { islo } from './connectors/islo';
  *
- * const harness = await init({
+ * const agent = await init({
  *   sandbox: islo('my-sandbox'),
  *   model: 'anthropic/claude-sonnet-4-6',
  * });
+ * const harness = agent.harness();
  * ```
  */
 import { spawn } from 'node:child_process';
@@ -278,10 +279,11 @@ import { islo } from '../connectors/islo'; // adjust path to match the user's la
 export const triggers = { webhook: true };
 
 export default async function ({ init }: FlueContext) {
-  const harness = await init({
+  const agent = await init({
     sandbox: islo('my-sandbox'),
     model: 'anthropic/claude-sonnet-4-6',
   });
+  const harness = agent.harness();
   const session = await harness.session();
 
   return await session.shell('uname -a');

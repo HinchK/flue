@@ -16,7 +16,6 @@ describe('defineAgent', () => {
 			instructions: 'Help the user.',
 			skills: [{ name: 'triage', description: 'Triage requests.' }],
 			tools: [tool],
-			subagents: [{ model: false as const }],
 		};
 
 		expect(defineAgent(definition)).toBe(definition);
@@ -46,7 +45,6 @@ describe('defineAgent', () => {
 		[{ tools: [{ name: 'tool', parameters: {}, execute: async (): Promise<string> => 'ok' }] }, 'tools[0].description'],
 		[{ tools: [{ name: 'tool', description: 'Desc', execute: async (): Promise<string> => 'ok' }] }, 'tools[0].parameters'],
 		[{ tools: [{ name: 'tool', description: 'Desc', parameters: {} }] }, 'tools[0].execute'],
-		[{ subagents: [{ model: 123 }] }, 'subagents[0]'],
 	])('rejects invalid definitions %#', (definition, message) => {
 		expect(() => defineAgent(definition as never)).toThrow(String(message));
 	});
@@ -73,10 +71,4 @@ describe('defineAgent', () => {
 		).toThrow('duplicate skill name "triage"');
 	});
 
-	it('rejects circular subagents', () => {
-		const definition = {} as { subagents?: unknown[] };
-		definition.subagents = [definition];
-
-		expect(() => defineAgent(definition as never)).toThrow('circular subagents');
-	});
 });

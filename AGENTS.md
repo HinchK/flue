@@ -42,10 +42,10 @@ Three commands:
 
 `--root` points at the project root. Defaults to the current working directory if omitted. By default, the build is written to `<root>/dist/`; use `--output <path>` to redirect the build elsewhere.
 
-Source files (agents, roles) live in one of two places, analogous to Next.js's `src/` folder:
+Agent source files live in one of two places, analogous to Next.js's `src/` folder:
 
-- `<root>/.flue/agents/`, `<root>/.flue/roles/` if a `.flue/` directory exists.
-- Otherwise `<root>/agents/`, `<root>/roles/` directly.
+- `<root>/.flue/agents/` if a `.flue/` directory exists.
+- Otherwise `<root>/agents/` directly.
 
 The two layouts never mix — if `.flue/` is present, the bare layout is ignored entirely.
 
@@ -127,4 +127,4 @@ init({ model: 'cloudflare/@cf/moonshotai/kimi-k2.6' })
 
 ### Agent = Deployed Workspace
 
-A repo is built and deployed as an agent. `flue build` compiles the root (skills, roles, agents, context) into a self-contained server artifact. On every push to main, the agent is rebuilt and redeployed.
+A repo is built and deployed as an agent. `flue build` compiles the root (skills, agents, context) into a self-contained server artifact. On every push to main, the agent is rebuilt and redeployed.

@@ -289,7 +289,6 @@ export interface AgentDefinition {
 	instructions?: string;
 	skills?: Skill[];
 	tools?: ToolDefinition[];
-	subagents?: AgentDefinition[];
 	thinkingLevel?: ThinkingLevel;
 	compaction?: false | CompactionConfig;
 }

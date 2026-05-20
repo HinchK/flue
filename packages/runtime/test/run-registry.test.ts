@@ -509,6 +509,7 @@ describe('Bare /runs/:runId routes via flue()', () => {
 		const wait = new Promise<void>((resolve) => {
 			releaseSend = resolve;
 		});
+		let didStartBackground = false;
 
 		configureFlueRuntime({
 			target: 'node',
@@ -540,6 +541,10 @@ describe('Bare /runs/:runId routes via flue()', () => {
 					defaultStore: new InMemorySessionStore(),
 					registrationStore: new InMemoryRegistrationStore(),
 				}),
+			startBackground(work) {
+				didStartBackground = true;
+				void work();
+			},
 		});
 
 		const app = new Hono();
@@ -553,6 +558,7 @@ describe('Bare /runs/:runId routes via flue()', () => {
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		releaseSend?.();
 		const body = await streamText;
+		expect(didStartBackground).toBe(true);
 		const idleIndex = body.indexOf('event: idle');
 		const endIndex = body.indexOf('event: run_end');
 		expect(idleIndex).toBeGreaterThan(-1);

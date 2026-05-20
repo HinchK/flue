@@ -58,7 +58,8 @@ Write this file verbatim. Do not "improve" it — it conforms to the published
  * import { e2b } from './connectors/e2b';
  *
  * const sandbox = await Sandbox.create();
- * const harness = await init({ sandbox: e2b(sandbox), model: 'anthropic/claude-sonnet-4-6' });
+ * const agent = await init({ sandbox: e2b(sandbox), model: 'anthropic/claude-sonnet-4-6' });
+ * const harness = agent.harness();
  * const session = await harness.session();
  * ```
  */
@@ -230,10 +231,11 @@ export default async function ({ init }: FlueContext) {
   // E2B reads E2B_API_KEY from the environment automatically.
   const sandbox = await Sandbox.create();
 
-  const harness = await init({
+  const agent = await init({
     sandbox: e2b(sandbox),
     model: 'anthropic/claude-sonnet-4-6',
   });
+  const harness = agent.harness();
   const session = await harness.session();
 
   return await session.shell('uname -a');

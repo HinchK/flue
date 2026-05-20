@@ -37,8 +37,8 @@ export const triggers = { webhook: true };
 
 // The agent handler. Where the orchestration of the agent lives.
 export default async function ({ init, payload }: FlueContext) {
-  // `harness` -- Your initialized harness including sandbox, tools, skills, etc.
-  const harness = await init({ model: 'anthropic/claude-sonnet-4-6' });
+  const agent = await init({ model: 'anthropic/claude-sonnet-4-6' });
+  const harness = agent.harness();
   const session = await harness.session();
 
   // prompt() sends a message in the session, triggering action.
@@ -81,10 +81,11 @@ export default async function ({ init, payload, env }: FlueContext) {
     await workspace.writeFile('/.hydrated', new Date().toISOString());
   }
 
-  const harness = await init({
+  const agent = await init({
     sandbox: getShellSandbox({ workspace, loader: env.LOADER }),
     model: 'openrouter/moonshotai/kimi-k2.6',
   });
+  const harness = agent.harness();
   const session = await harness.session();
 
   return await session.prompt(
@@ -92,10 +93,6 @@ export default async function ({ init, payload, env }: FlueContext) {
     workspace for articles relevant to this request, then write a helpful response.
 
     Customer: ${payload.message}`,
-    {
-      // Provide roles (aka subagents) to guide your agent. Defined in .flue/roles/
-      role: 'triager',
-    },
   );
 }
 ```
@@ -127,12 +124,13 @@ export default async function ({ init, payload }: FlueContext) {
   //
   // `model` sets the default model for every prompt/skill call in this
   // agent. Override per-call with `{ model: '...' }` on prompt()/skill().
-  const harness = await init({
+  const agent = await init({
     sandbox: local({
       env: { GH_TOKEN: process.env.GH_TOKEN },
     }),
     model: 'anthropic/claude-opus-4-7',
   });
+  const harness = agent.harness();
   const session = await harness.session();
 
   // Skills can be referenced either by their frontmatter `name:` (shown below)
@@ -181,10 +179,11 @@ export default async function ({ init, payload, env }: FlueContext) {
   // instead to best pick up where you last left off in the conversation.
   const client = new Daytona({ apiKey: env.DAYTONA_API_KEY });
   const sandbox = await client.create();
-  const setupHarness = await init({
+  const setupAgent = await init({
     sandbox: daytona(sandbox),
     model: 'openai/gpt-5.5',
   });
+  const setupHarness = setupAgent.harness();
   const setup = await setupHarness.session();
 
   // For simplicity, we clone the target repo into the sandbox here.
@@ -195,12 +194,13 @@ export default async function ({ init, payload, env }: FlueContext) {
 
   // Start a second harness in the cloned repo. It shares the same sandbox, but
   // discovers AGENTS.md and skills from /workspace/project.
-  const projectHarness = await init({
+  const projectAgent = await init({
     name: 'project',
     sandbox: daytona(sandbox),
     cwd: '/workspace/project',
     model: 'openai/gpt-5.5',
   });
+  const projectHarness = projectAgent.harness();
   const session = await projectHarness.session();
 
   // Coding agents don't hide the agent DX from the user, so no need to
@@ -229,10 +229,11 @@ export default async function ({ init, payload, env }: FlueContext) {
   });
 
   try {
-    const harness = await init({
+    const agent = await init({
       model: 'anthropic/claude-sonnet-4-6',
       tools: github.tools,
     });
+    const harness = agent.harness();
     const session = await harness.session();
     return await session.prompt(payload.prompt);
   } finally {
@@ -251,7 +252,7 @@ An agent is the source file in `agents/<name>.ts`. For HTTP agents, the URL `<id
 POST /agents/<agent-name>/<id>
 ```
 
-Inside a run, `init()` creates a harness: a configured handle for model defaults, tools, sandbox, filesystem, and sessions. The default harness is named `"default"`; pass `init({ name })` when one run needs multiple isolated harness scopes.
+Inside a run, `init()` returns an Agent. `agent.harness()` exposes the workflow surface for model defaults, tools, sandbox, filesystem, and sessions. The default harness is named `"default"`; pass `init({ name })` when one run needs multiple isolated harness scopes.
 
 By default, `harness.session()` opens the default session inside the default harness for that agent instance. Reuse the same URL `<id>` to continue the same agent instance. Use a new URL `<id>` to start fresh.
 
@@ -285,7 +286,6 @@ const session = await harness.session();
 
 const research = await session.task('Research the auth flow and summarize the key files.', {
   cwd: '/workspace/project',
-  role: 'researcher',
 });
 
 const answer = await session.prompt(
@@ -293,14 +293,19 @@ const answer = await session.prompt(
 );
 ```
 
-Roles can be set at the harness, session, or call level. Precedence is `call role > session role > harness role`. Role instructions are applied as call-scoped system prompt overlays, not injected into the persisted user message history.
+Use module-scope `defineAgent()` values for reusable instructions or defaults, then opt into them with `init({ inherit })`.
 
 ```ts
-const harness = await init({ model: 'anthropic/claude-sonnet-4-6', role: 'coder' });
-const session = await harness.session('review-thread', { role: 'reviewer' });
+const reviewer = defineAgent({
+  model: 'anthropic/claude-sonnet-4-6',
+  instructions: 'Review changes carefully and concisely.',
+});
 
-await session.prompt('Review the latest changes.'); // uses reviewer
-await session.task('Research related issues.', { role: 'researcher' }); // uses researcher
+const agent = await init({ inherit: reviewer });
+const session = await agent.harness().session('review-thread');
+
+await session.prompt('Review the latest changes.');
+await session.task('Research related issues.');
 ```
 
 ### Provider Settings
@@ -340,10 +345,11 @@ import { Bash, InMemoryFs } from 'just-bash';
 
 const fs = new InMemoryFs();
 
-const harness = await init({
+const agent = await init({
   sandbox: () => new Bash({ fs, cwd: '/workspace', python: true }),
   model: 'anthropic/claude-sonnet-4-6',
 });
+const harness = agent.harness();
 const session = await harness.session();
 ```
 

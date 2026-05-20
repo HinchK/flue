@@ -51,7 +51,8 @@ Write this file verbatim. Do not "improve" it — it conforms to the published
  *
  * const client = new Daytona({ apiKey: process.env.DAYTONA_API_KEY });
  * const sandbox = await client.create({ image: 'ubuntu:latest' });
- * const harness = await init({ sandbox: daytona(sandbox), model: 'anthropic/claude-sonnet-4-6' });
+ * const agent = await init({ sandbox: daytona(sandbox), model: 'anthropic/claude-sonnet-4-6' });
+ * const harness = agent.harness();
  * const session = await harness.session();
  * ```
  */
@@ -196,10 +197,11 @@ export default async function ({ init, env }: FlueContext) {
   const client = new Daytona({ apiKey: env.DAYTONA_API_KEY });
   const sandbox = await client.create();
 
-  const harness = await init({
+  const agent = await init({
     sandbox: daytona(sandbox),
     model: 'anthropic/claude-sonnet-4-6',
   });
+  const harness = agent.harness();
   const session = await harness.session();
 
   return await session.shell('uname -a');

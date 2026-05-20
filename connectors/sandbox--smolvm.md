@@ -68,10 +68,11 @@ Write this file verbatim. Do not "improve" it — it conforms to the published
  * import { smolvm } from './connectors/smolvm';
  *
  * const machine = await Machine.create({ name: 'my-flue-vm' });
- * const harness = await init({
+ * const agent = await init({
  *   sandbox: smolvm(machine),
  *   model: 'anthropic/claude-sonnet-4-6',
  * });
+ * const harness = agent.harness();
  * ```
  */
 import { createSandboxSessionEnv } from '@flue/runtime';
@@ -260,10 +261,11 @@ export const triggers = { webhook: true };
 export default async function ({ init }: FlueContext) {
   const machine = await Machine.create({ name: `flue-${Date.now()}` });
 
-  const harness = await init({
+  const agent = await init({
     sandbox: smolvm(machine),
     model: 'anthropic/claude-sonnet-4-6',
   });
+  const harness = agent.harness();
   const session = await harness.session();
 
   return await session.shell('uname -a');

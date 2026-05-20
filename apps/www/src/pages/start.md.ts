@@ -47,9 +47,9 @@ Then, determine the following. Ask the user only for information you do not alre
    - Confirm with the user that they want to implement there. Mention the inferred layout in that confirmation. For example: "Use the current directory with the \`.flue\` layout because it already has files?"
    - If they choose a different location, inspect that directory instead and infer the layout again using the same layout rules.
    - Project layout rules:
-     - Directory does not exist: create it and use the root layout: \`./agents/\` and \`./roles/\`.
-     - Directory exists and is empty: use the root layout: \`./agents/\` and \`./roles/\`.
-     - Directory exists and already has files: use the \`.flue\` layout: \`./.flue/agents/\` and \`./.flue/roles/\`.
+     - Directory does not exist: create it and use the root layout: \`./agents/\`.
+     - Directory exists and is empty: use the root layout: \`./agents/\`.
+     - Directory exists and already has files: use the \`.flue\` layout: \`./.flue/agents/\`.
 3. Where should it deploy? For example: Cloudflare Workers, Node.js, GitHub Actions, GitLab CI/CD, Vercel, Fly.io.
    - Available deploy guides:
 ${await getDeployGuideList()}
@@ -81,7 +81,7 @@ Before implementing, restate the chosen requirements to yourself as an implement
    - If the target directory has files and the guide shows \`agents/hello.ts\`, create \`./.flue/agents/hello.ts\` instead.
 3. Create or update the project in the requested directory.
 4. Scaffold one minimal Flue agent that matches the user's idea. Keep it closer to "hello world" than production app.
-5. Pass the selected model ID to \`init({ model: '<exact model id>' })\`. Flue does not choose a model automatically.
+5. Pass the selected model ID to \`init({ model: '<exact model id>' })\`, then use \`agent.harness()\` for sessions. Flue does not choose a model automatically.
 6. Add \`tsconfig.json\` for TypeScript editor/typechecking support.
    - If no \`tsconfig.json\` exists, create this minimal one:
      \`\`\`json
@@ -114,7 +114,7 @@ Before finishing, verify that the implementation matches the user's explicit cho
   - Existing non-empty target directory means \`.flue\` layout: \`./.flue/agents/<name>.ts\`.
 - **Deploy target**: Config and commands match the user's selected deploy target.
 - **LLM provider/model**: Model identifier is one of the suggested exact IDs, or an exact value from \`https://flueframework.com/models.json\` if the user requested another model.
-- **Agent initialization**: The selected model ID is passed to \`init({ model })\`, or to individual \`prompt()\` / \`skill()\` calls (not common).
+- **Agent initialization**: The selected model ID is passed to \`init({ model })\`, and sessions are created from \`agent.harness()\`.
 - **Secrets**: No fake API keys, tokens, or secrets were invented.
 - **Dependencies**: Only dependencies required by the selected deploy guide were added.
 

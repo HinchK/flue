@@ -83,7 +83,7 @@ export interface HandleAgentOptions {
 	 * mid-stream.
 	 */
 	runHandler?: RunHandlerFn;
-	/** Keep detached sync finalization alive after the HTTP response returns. */
+	/** Keep detached lifecycle work alive after the HTTP response returns. */
 	startBackground?: StartBackgroundFn;
 	/** Per-target run history store. If omitted, run persistence is disabled. */
 	runStore?: RunStore;
@@ -346,6 +346,7 @@ function runSseMode(opts: ModeOptions): Response {
 		request,
 		createContext,
 		runHandler,
+		startBackground,
 		runStore,
 		lease,
 		runSubscribers,
@@ -386,7 +387,7 @@ function runSseMode(opts: ModeOptions): Response {
 		writeHeartbeat().catch(() => {});
 	}, SSE_HEARTBEAT_MS);
 
-	(async () => {
+	startBackground(async () => {
 		let lifecycle: RunLifecycle | undefined;
 		try {
 			lifecycle = await createRunLifecycle({
@@ -425,7 +426,7 @@ function runSseMode(opts: ModeOptions): Response {
 				// Already closed by the client / runtime — nothing to do.
 			}
 		}
-	})();
+	});
 
 	return new Response(readable, {
 		headers: {

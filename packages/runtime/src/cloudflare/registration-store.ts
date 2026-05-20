@@ -14,50 +14,77 @@ export interface SqlStorage {
 	exec(query: string, ...bindings: unknown[]): SqlResult;
 }
 
-export function createDurableRegistrationStore(sql: SqlStorage): RegistrationStore {
+export interface CloudflareRegistrationState {
+	activeRegistrationKeys?: Set<string>;
+}
+
+export function createDurableRegistrationStore(
+	sql: SqlStorage,
+	state: CloudflareRegistrationState,
+): RegistrationStore {
 	ensureRegistrationTable(sql);
-	return new DurableRegistrationStore(sql);
+	return new DurableRegistrationStore(sql, state);
 }
 
 class DurableRegistrationStore implements RegistrationStore {
-	constructor(private sql: SqlStorage) {}
+	private active: Set<string>;
+
+	constructor(
+		private sql: SqlStorage,
+		state: CloudflareRegistrationState,
+	) {
+		this.active = state.activeRegistrationKeys ??= new Set<string>();
+	}
 
 	async claim(registration: RegistrationKey): Promise<RegistrationClaim | null> {
-		const inserted = this.sql
-			.exec(
-				`INSERT OR IGNORE INTO flue_registration_slots
-				 (agent_name, instance_id, status, updated_at)
-				 VALUES (?, ?, ?, ?) RETURNING instance_id`,
-				registration.agentName,
-				registration.instanceId,
-				'active',
-				Date.now(),
-			)
-			.toArray();
-		if (inserted.length === 0) return null;
+		const key = createRegistrationKey(registration);
+		if (this.active.has(key) || this.isCompleted(registration)) return null;
+		this.active.add(key);
 		return {
 			complete: async () => {
 				this.sql.exec(
-					`UPDATE flue_registration_slots
-					 SET status = ?, updated_at = ?
-					 WHERE agent_name = ? AND instance_id = ?`,
+					`INSERT OR REPLACE INTO flue_registration_slots
+					 (agent_name, instance_id, status, updated_at)
+					 VALUES (?, ?, ?, ?)`,
+					registration.agentName,
+					registration.instanceId,
 					'completed',
 					Date.now(),
-					registration.agentName,
-					registration.instanceId,
 				);
+				this.active.delete(key);
 			},
 			release: async () => {
-				this.sql.exec(
-					`DELETE FROM flue_registration_slots
-					 WHERE agent_name = ? AND instance_id = ? AND status = ?`,
-					registration.agentName,
-					registration.instanceId,
-					'active',
-				);
+				this.active.delete(key);
 			},
 		};
 	}
+
+	private isCompleted(registration: RegistrationKey): boolean {
+		const rows = this.sql
+			.exec(
+				`SELECT status FROM flue_registration_slots
+				 WHERE agent_name = ? AND instance_id = ?`,
+				registration.agentName,
+				registration.instanceId,
+			)
+			.toArray();
+		const row = rows[0] as { status?: unknown } | undefined;
+		if (row?.status === 'completed') return true;
+		if (row?.status === 'active') {
+			this.sql.exec(
+				`DELETE FROM flue_registration_slots
+				 WHERE agent_name = ? AND instance_id = ? AND status = ?`,
+				registration.agentName,
+				registration.instanceId,
+				'active',
+			);
+		}
+		return false;
+	}
+}
+
+function createRegistrationKey(registration: RegistrationKey): string {
+	return JSON.stringify([registration.agentName, registration.instanceId]);
 }
 
 function ensureRegistrationTable(sql: SqlStorage): void {

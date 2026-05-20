@@ -4,7 +4,8 @@ export const COPY_PROMPT = `fetch https://flueframework.com/start.md to create a
 export const HERO = `export default async function ({ init, payload, env }) {
   // Initialize a new agent. 
   // Provide a hosted sandbox, or use Flue's built-in virtual sandbox.
-  const harness = await init({ model: 'anthropic/claude-sonnet-4-6' });
+  const agent = await init({ model: 'anthropic/claude-sonnet-4-6' });
+  const harness = agent.harness();
   const session = await harness.session();
 
   // Call skills as reusable workflows with structured output:
@@ -46,18 +47,16 @@ export default async function ({ init, payload, env }: FlueContext) {
     await workspace.writeFile('/.hydrated', new Date().toISOString());
   }
 
-  const harness = await init({
+  const agent = await init({
     sandbox: getShellSandbox({ workspace, loader: env.LOADER }),
     model: 'openrouter/moonshotai/kimi-k2.6',
   });
+  const harness = agent.harness();
   const session = await harness.session();
-  // Prompt! The agent harness includes your workspace AGENTS.md,
-  // skills, and roles (aka subagents) to complete your task as 
-  // desired. Use \`session.skill()\` to call a skill directly.
-  return await session.prompt(
-    \`Respond to this customer message: \${payload.message}\`,
-    { role: 'support-agent' },
-  );
+  // Prompt! The agent harness includes your workspace AGENTS.md
+  // and skills to complete your task as desired.
+  // Use \`session.skill()\` to call a skill directly.
+  return await session.prompt(\`Respond to this customer message: \${payload.message}\`);
 }`;
 
 export const ISSUE_TRIAGE = `import type { FlueContext } from '@flue/runtime';
@@ -70,7 +69,8 @@ export const triggers = {};
 // Built for: Node, GitHub Actions
 export default async function ({ init, payload, env }: FlueContext) {
   const { issueNumber } = payload;
-  const harness = await init({ model: 'anthropic/claude-opus-4-7' });
+  const agent = await init({ model: 'anthropic/claude-opus-4-7' });
+  const harness = agent.harness();
   const session = await harness.session();
   // Run the 'triage' skill to triage the GitHub issue.
   const { data } = await session.skill('triage', {
@@ -102,7 +102,8 @@ export default async function ({ init, payload, env }: FlueContext) {
   // Each agent gets a real container via Daytona.
   const client = new Daytona({ apiKey: env.DAYTONA_API_KEY });
   const sandbox = await client.create();
-  const harness = await init({ sandbox: daytona(sandbox), model: 'openai/gpt-5.5' });
+  const agent = await init({ sandbox: daytona(sandbox), model: 'openai/gpt-5.5' });
+  const harness = agent.harness();
   const session = await harness.session();
   // Setup the sandbox (for illustrative purposes only). 
   // In production, you'd want to bake setup into the container image,
@@ -127,16 +128,13 @@ export default async function ({ init, payload }: FlueContext) {
 
   // Create a custom virtual sandbox with 'just-bash'. Enable Python use
   // so the agent can write code to analyze data, generate reports, etc.
-  const harness = await init({
+  const agent = await init({
     sandbox: () => new Bash({ fs, cwd: '/workspace', python: true }),
     model: 'anthropic/claude-sonnet-4-6',
   });
+  const harness = agent.harness();
   const session = await harness.session();
-  // Prompt! The agent harness includes your workspace AGENTS.md,
-  // skills, and roles (aka subagents) to analyze the data and
-  // complete your task as desired.
-  return await session.prompt(
-    \`Answer this user question: \${payload.message}\`,
-    { role: 'data-analyst' },
-  );
+  // Prompt! The agent harness includes your workspace AGENTS.md
+  // and skills to analyze the data and complete your task as desired.
+  return await session.prompt(\`Answer this user question: \${payload.message}\`);
 }`;

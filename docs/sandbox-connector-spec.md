@@ -265,10 +265,9 @@ varies is where the agent sources live inside it — analogous to Next.js's
 `src/` folder:
 
 - **`.flue/` source layout** (root contains a `.flue/` directory holding
-  `agents/`, `roles/`, etc.): write the connector to
-  `./.flue/connectors/<name>.ts`.
-- **Bare layout** (root contains `agents/`, `roles/`, etc. at its root):
-  write the connector to `./connectors/<name>.ts`.
+  `agents/`, etc.): write the connector to `./.flue/connectors/<name>.ts`.
+- **Bare layout** (root contains `agents/`, etc. at its root): write the
+  connector to `./connectors/<name>.ts`.
 
 The detection rule is simple: if `<root>/.flue/` exists, use the `.flue/`
 location; otherwise use the bare location. If neither feels right (uncommon

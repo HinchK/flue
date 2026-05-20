@@ -67,7 +67,8 @@ Write this file verbatim. Do not "improve" it — it conforms to the published
  * const image = client.images.fromRegistry('python:3.13-slim');
  * const sandbox = await client.sandboxes.create(app, image);
  *
- * const harness = await init({ sandbox: modal(sandbox), model: 'anthropic/claude-sonnet-4-6' });
+ * const agent = await init({ sandbox: modal(sandbox), model: 'anthropic/claude-sonnet-4-6' });
+ * const harness = agent.harness();
  * const session = await harness.session();
  * ```
  */
@@ -320,10 +321,11 @@ export default async function ({ init }: FlueContext) {
   const image = client.images.fromRegistry('python:3.13-slim');
   const sandbox = await client.sandboxes.create(app, image);
 
-  const harness = await init({
+  const agent = await init({
     sandbox: modal(sandbox),
     model: 'anthropic/claude-sonnet-4-6',
   });
+  const harness = agent.harness();
   const session = await harness.session();
 
   return await session.shell('uname -a');

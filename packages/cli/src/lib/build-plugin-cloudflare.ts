@@ -67,6 +67,9 @@ export class CloudflarePlugin implements BuildPlugin {
 				const className = agentClassName(a.name);
 				const handlerVar = agentVarName(a.name, agents.indexOf(a));
 				return `export class ${className} extends Agent {
+  flueInstanceRunState = {};
+  flueRegistrationState = {};
+
   async onRequest(request) {
     return dispatchAgent(request, this, ${JSON.stringify(a.name)}, ${handlerVar});
   }
@@ -123,8 +126,7 @@ import {
   createCloudflareRunRegistry,
   createDurableDefaultWorkspaceStore,
   createDurableRegistrationStore,
-  createDurableInstanceRunAdmission,
-  releaseDurableInstanceRunAdmission,
+  createCloudflareInstanceRunAdmission,
 } from '@flue/runtime/cloudflare';
 import { registerApiProvider, registerProvider } from '@flue/runtime/app';
 
@@ -252,7 +254,7 @@ function createContextForRequest(agentName, id, runId, payload, doInstance, req)
     ? createDOStore(sql)
     : memoryStore;
   const registrationStore = sql
-    ? createDurableRegistrationStore(sql)
+    ? createDurableRegistrationStore(sql, doInstance.flueRegistrationState ??= {})
     : memoryRegistrationStore;
 
   return createFlueContext({
@@ -279,8 +281,8 @@ function createRunStoreForRequest(doInstance) {
 }
 
 function createInstanceAdmissionForRequest(doInstance) {
-  return doInstance?.ctx?.storage?.sql
-    ? createDurableInstanceRunAdmission(doInstance.ctx.storage.sql)
+  return doInstance
+    ? createCloudflareInstanceRunAdmission(doInstance.flueInstanceRunState ??= {})
     : memoryInstanceAdmission;
 }
 
@@ -315,25 +317,9 @@ function assertAgentsDurabilityApi(doInstance, method) {
 	}
 }
 
-async function handleFlueFiberRecovered(ctx, doInstance, agentName) {
+async function handleFlueFiberRecovered(ctx, _doInstance, agentName) {
   if (!ctx.name || !ctx.name.startsWith('flue:')) return;
   console.warn('[flue] Cloudflare fiber interrupted:', agentName, ctx.name, ctx.snapshot ?? null);
-  const snapshot = ctx.snapshot;
-  const sql = doInstance?.ctx?.storage?.sql;
-  if (
-    sql &&
-    snapshot &&
-    snapshot.kind === 'webhook' &&
-    typeof snapshot.agentName === 'string' &&
-    typeof snapshot.id === 'string' &&
-    typeof snapshot.runId === 'string'
-  ) {
-    releaseDurableInstanceRunAdmission(sql, {
-      agentName: snapshot.agentName,
-      instanceId: snapshot.id,
-      runId: snapshot.runId,
-    });
-  }
 }
 
 // ─── Per-DO Dispatch ───────────────────────────────────────────────────────

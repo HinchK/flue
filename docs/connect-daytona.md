@@ -1,6 +1,6 @@
 # Connect a Daytona Sandbox
 
-This guide takes a working Flue agent and connects it to a [Daytona](https://www.daytona.io/) remote sandbox so each session gets a fully isolated Linux environment — git, Node.js, Python, system packages, the lot.
+This guide takes a working Flue agent and connects it to a [Daytona](https://www.daytona.io/) remote sandbox so it can use a fully isolated Linux environment — git, Node.js, Python, system packages, the lot.
 
 ## Prerequisites
 
@@ -71,11 +71,11 @@ export default async function ({ init, env }: FlueContext) {
 }
 ```
 
-You own the sandbox. Flue does not delete it for you — sandboxes persist across requests by default, which is usually what you want for debugging, log inspection, or warm reuse.
+You own the sandbox. Flue does not delete it for you; destroy it explicitly when your handler is done, or keep and reuse it intentionally.
 
-## Advanced: Sharing a sandbox across sessions
+## Advanced: Sharing a sandbox across agents
 
-If your agent needs the sandbox in a specific state before prompting — a repo cloned, dependencies installed, config files written — do the setup in one session, then spin up a second `init()` for the working session with the right `cwd`:
+If your agent needs the sandbox in a specific state before prompting — a repo cloned, dependencies installed, config files written — do the setup with one agent, then create a second agent for the working session with the right `cwd`:
 
 ```typescript
 import type { FlueContext } from '@flue/runtime';
@@ -100,7 +100,7 @@ export default async function ({ init, payload, env }: FlueContext) {
 
   // Working session — same sandbox, but rooted at the project directory.
   const projectAgent = await init({
-    id: 'project',
+    name: 'project',
     sandbox: daytona(sandbox),
     cwd: '/workspace/project',
     model: 'anthropic/claude-sonnet-4-6',
@@ -112,7 +112,7 @@ export default async function ({ init, payload, env }: FlueContext) {
 }
 ```
 
-Both `init()` calls share the same Daytona sandbox. The second passes `cwd` so the agent's tools operate inside the project directory.
+Both agents share the same Daytona sandbox. The second `init()` passes `cwd` so its tools operate inside the project directory.
 
 ## Configuring the sandbox
 

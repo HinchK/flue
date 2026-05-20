@@ -6,7 +6,6 @@ const AGENT_DEFINITION_FIELDS = new Set([
 	'instructions',
 	'skills',
 	'tools',
-	'subagents',
 	'thinkingLevel',
 	'compaction',
 ]);
@@ -25,20 +24,18 @@ const AgentDefinitionSchema = v.looseObject({
 	instructions: v.optional(v.string()),
 	skills: v.optional(v.array(v.unknown())),
 	tools: v.optional(v.array(v.unknown())),
-	subagents: v.optional(v.array(v.unknown())),
 	thinkingLevel: v.optional(v.string()),
 	compaction: v.optional(v.union([v.literal(false), v.looseObject({})])),
 });
 
 export function defineAgent(definition: AgentDefinition): AgentDefinition {
-	assertAgentDefinition(definition, 'defineAgent()', new WeakSet());
+	assertAgentDefinition(definition, 'defineAgent()');
 	return definition;
 }
 
 function assertAgentDefinition(
 	value: unknown,
 	label: string,
-	activeDefinitions: WeakSet<object>,
 ): asserts value is AgentDefinition {
 	const parsed = v.safeParse(AgentDefinitionSchema, value);
 	if (!parsed.success) {
@@ -46,11 +43,6 @@ function assertAgentDefinition(
 	}
 
 	const definition = parsed.output as AgentDefinition;
-	const source = value as object;
-	if (activeDefinitions.has(source)) {
-		throw new Error(`[flue] ${label} must not contain circular subagents.`);
-	}
-	activeDefinitions.add(source);
 
 	assertKnownFields(definition, label);
 	assertThinkingLevel(definition.thinkingLevel, label);
@@ -59,12 +51,6 @@ function assertAgentDefinition(
 	assertSkills(definition.skills, label);
 	assertUniqueNames(definition.tools, `${label} tools`, 'tool');
 	assertUniqueNames(definition.skills, `${label} skills`, 'skill');
-
-	for (const [index, subagent] of definition.subagents?.entries() ?? []) {
-		assertAgentDefinition(subagent, `${label} subagents[${index}]`, activeDefinitions);
-	}
-
-	activeDefinitions.delete(source);
 }
 
 function assertKnownFields(definition: AgentDefinition, label: string): void {

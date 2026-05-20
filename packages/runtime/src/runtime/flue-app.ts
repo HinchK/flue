@@ -77,7 +77,7 @@ export interface FlueRuntime {
 
 	/** Optional Node foreground handler wrapper. Defaults to direct invocation. */
 	runHandler?: RunHandlerFn;
-	/** Optional detached sync finalization keeper. Defaults to direct background execution. */
+	/** Optional detached lifecycle keeper. Defaults to direct background execution. */
 	startBackground?: StartBackgroundFn;
 
 	/** Node run history store. */

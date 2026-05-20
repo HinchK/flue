@@ -16,6 +16,20 @@
 	// throw at sandbox-construction with a clear error, but the rest of
 	// the example (with-cloudflare-binding) keeps working.
 	"worker_loaders": [{ "binding": "LOADER" }],
+	"migrations": [
+		{
+			"tag": "flue-class-FlueRegistry",
+			"new_sqlite_classes": ["FlueRegistry"],
+		},
+		{
+			"tag": "flue-class-WithCloudflareBinding",
+			"new_sqlite_classes": ["WithCloudflareBinding"],
+		},
+		{
+			"tag": "flue-example-skill-agent-classes-2026-05-20",
+			"new_sqlite_classes": ["SkillsFromGit", "SkillsFromR2"],
+		},
+	],
 	// R2 bucket used by skills-from-r2.ts as the hydration source.
 	// `preview_bucket_name` lets wrangler dev (in --remote mode) use a
 	// separate bucket so you don't have to seed prod. Seed the dev bucket

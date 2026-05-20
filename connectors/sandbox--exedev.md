@@ -64,10 +64,11 @@ Write this file verbatim. Do not "improve" it — it conforms to the published
  * ```typescript
  * import { exedev } from './connectors/exedev';
  *
- * const harness = await init({
+ * const agent = await init({
  *   sandbox: exedev({ host: 'maple-dune.exe.xyz' }),
  *   model: 'anthropic/claude-sonnet-4-6',
  * });
+ * const harness = agent.harness();
  * ```
  *
  * @example Create a VM before wrapping it
@@ -76,10 +77,11 @@ Write this file verbatim. Do not "improve" it — it conforms to the published
  *
  * const vm = await createExeVm({ apiToken: process.env.EXE_API_TOKEN! });
  * try {
- *   const harness = await init({
+ *   const agent = await init({
  *     sandbox: exedev(vm),
  *     model: 'anthropic/claude-sonnet-4-6',
  *   });
+ *   const harness = agent.harness();
  * } finally {
  *   await deleteExeVm({ apiToken: process.env.EXE_API_TOKEN!, name: vm.name });
  * }
@@ -721,10 +723,11 @@ import { exedev } from "../connectors/exedev";
 export const triggers = { webhook: true };
 
 export default async function ({ init, env }: FlueContext) {
-  const harness = await init({
+  const agent = await init({
     sandbox: exedev({ host: env.EXE_VM_HOST }),
     model: "anthropic/claude-sonnet-4-6",
   });
+  const harness = agent.harness();
   const session = await harness.session();
 
   return await session.shell("uname -a");
@@ -747,10 +750,11 @@ export default async function ({ init, env }: FlueContext) {
   const vm = await createExeVm({ apiToken: env.EXE_API_TOKEN });
 
   try {
-    const harness = await init({
+    const agent = await init({
       sandbox: exedev(vm),
       model: "anthropic/claude-sonnet-4-6",
     });
+    const harness = agent.harness();
     const session = await harness.session();
 
     return await session.shell("uname -a");
@@ -779,10 +783,11 @@ export default async function ({ init, env }: FlueContext) {
   });
 
   try {
-    const harness = await init({
+    const agent = await init({
       sandbox: exedev(vm),
       model: "anthropic/claude-sonnet-4-6",
     });
+    const harness = agent.harness();
     const session = await harness.session();
 
     return await session.shell("uname -a");

@@ -2,7 +2,7 @@
 
 Build and run Flue agents in GitLab CI/CD pipelines. This guide walks you through creating your first agent, running it locally with the CLI, and wiring it into a pipeline.
 
-By the end, you will have a Flue agent running inside GitLab CI/CD, and you will know how to use local sandbox context, external CLIs, roles, skills, and typed results to build CI workflows.
+By the end, you will have a Flue agent running inside GitLab CI/CD, and you will know how to use local sandbox context, external CLIs, reusable agent definitions, skills, and typed results to build CI workflows.
 
 ## Hello World
 
@@ -125,9 +125,9 @@ Now let's build something useful — an issue triage agent that analyzes an issu
 
 ### The agent handler
 
-The agent handler is where orchestration lives. The `FlueContext` gives you everything you need: `init()` to create a session, `payload` for input data, and `env` for environment bindings.
+The agent handler is where orchestration lives. The `FlueContext` gives you everything you need: `init()` to create an agent, `payload` for input data, and `env` for environment bindings.
 
-Once you have a session, you have three core methods:
+Once you open a harness session from that agent, you have three core methods:
 
 - **`session.shell(cmd)`** — Run a shell command in the sandbox. Returns `{ stdout, stderr, exitCode }`.
 - **`session.prompt(text, opts)`** — Send a prompt to the agent and get back a result.
@@ -204,27 +204,20 @@ export default async function ({ init, payload }: FlueContext) {
 
 If you want a tighter boundary — the agent can call a specific operation but never see the underlying token — wrap the operation as a custom tool with `init({ tools: [...] })`. The tool implementation reads the secret from `process.env`; the agent only sees the tool's parameters and result.
 
-### Roles
+### Reusable agent definitions
 
-Roles are agent personas that shape behavior across prompts. They live alongside your agents under `./.flue/roles/` and ship with the deployed agent:
-
-`.flue/roles/reviewer.md`:
-
-```markdown
----
-description: A careful code reviewer focused on correctness and security
----
-
-You are a senior code reviewer. Focus on correctness, security implications,
-and adherence to the project's coding standards. Be direct and specific in
-your feedback.
-```
-
-Use a role by passing its name to `prompt()`:
+Use a module-scope `defineAgent()` value for reusable instructions or defaults, then opt into it with `init({ inherit })`:
 
 ```typescript
+import { defineAgent } from '@flue/runtime';
+
+const reviewer = defineAgent({
+  instructions: "Focus on correctness, security implications, and adherence to the project's coding standards. Be direct and specific.",
+});
+
+const agent = await init({ inherit: reviewer });
+const session = await agent.harness().session();
 const { data } = await session.prompt(`Review this MR:\n${diff}`, {
-  role: 'reviewer',
   result: v.object({ approved: v.boolean(), comments: v.array(v.string()) }),
 });
 ```

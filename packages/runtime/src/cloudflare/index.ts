@@ -24,7 +24,4 @@ export { createDurableDefaultWorkspaceStore } from './default-workspace-store.ts
 export { createDurableRegistrationStore } from './registration-store.ts';
 export { FlueRegistry } from './registry-do.ts';
 export { createCloudflareRunRegistry } from './run-registry.ts';
-export {
-	createDurableInstanceRunAdmission,
-	releaseDurableInstanceRunAdmission,
-} from './instance-admission.ts';
+export { createCloudflareInstanceRunAdmission } from './instance-admission.ts';

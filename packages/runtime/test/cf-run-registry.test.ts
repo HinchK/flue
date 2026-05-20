@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { createDurableDefaultWorkspaceStore } from '../src/cloudflare/default-workspace-store.ts';
-import { createDurableInstanceRunAdmission } from '../src/cloudflare/instance-admission.ts';
+import { createCloudflareInstanceRunAdmission } from '../src/cloudflare/instance-admission.ts';
 import { createDurableRegistrationStore } from '../src/cloudflare/registration-store.ts';
 import {
 	createRegistryOps,
@@ -57,7 +57,7 @@ describe('createDurableDefaultWorkspaceStore (SQL paths)', () => {
 describe('createDurableRegistrationStore (SQL paths)', () => {
 	it('persists completed registrations by agent and instance', async () => {
 		const sql = makeFakeSql();
-		const store = createDurableRegistrationStore(sql);
+		const store = createDurableRegistrationStore(sql, {});
 		const first = { agentName: 'hello', instanceId: 'inst_a' };
 		const isolatedAgent = { agentName: 'other', instanceId: 'inst_a' };
 		const isolatedInstance = { agentName: 'hello', instanceId: 'inst_b' };
@@ -65,20 +65,77 @@ describe('createDurableRegistrationStore (SQL paths)', () => {
 		const claim = await store.claim(first);
 		expect(claim).toBeTruthy();
 		await claim?.complete();
-		expect(await createDurableRegistrationStore(sql).claim(first)).toBeNull();
+		expect(await createDurableRegistrationStore(sql, {}).claim(first)).toBeNull();
 		expect(await store.claim(isolatedAgent)).toBeTruthy();
 		expect(await store.claim(isolatedInstance)).toBeTruthy();
 	});
+
+	it('keeps active registration claims transient to one DO state object', async () => {
+		const sql = makeFakeSql();
+		const firstState = {};
+		const active = await createDurableRegistrationStore(sql, firstState).claim({
+			agentName: 'hello',
+			instanceId: 'inst_a',
+		});
+		expect(active).toBeTruthy();
+		expect(
+			await createDurableRegistrationStore(sql, firstState).claim({ agentName: 'hello', instanceId: 'inst_a' }),
+		).toBeNull();
+		expect(
+			await createDurableRegistrationStore(sql, {}).claim({ agentName: 'hello', instanceId: 'inst_a' }),
+		).toBeTruthy();
+	});
+
+	it('reclaims obsolete durable active registration rows', async () => {
+		const sql = makeFakeSql();
+		sql.exec(
+			`CREATE TABLE IF NOT EXISTS flue_registration_slots (
+			 agent_name TEXT NOT NULL,
+			 instance_id TEXT NOT NULL,
+			 status TEXT NOT NULL,
+			 updated_at INTEGER NOT NULL,
+			 PRIMARY KEY (agent_name, instance_id)
+			)`,
+		);
+		sql.exec(
+			`INSERT INTO flue_registration_slots (agent_name, instance_id, status, updated_at)
+			 VALUES (?, ?, ?, ?)`,
+			'hello',
+			'inst_a',
+			'active',
+			Date.now(),
+		);
+		expect(
+			await createDurableRegistrationStore(sql, {}).claim({ agentName: 'hello', instanceId: 'inst_a' }),
+		).toBeTruthy();
+	});
 });
 
-describe('createDurableInstanceRunAdmission', () => {
-	it('admits one active run per agent instance and releases leases', async () => {
-		const admission = createDurableInstanceRunAdmission(makeFakeSql());
+describe('createCloudflareInstanceRunAdmission', () => {
+	it('admits one active run per DO state object and releases leases', async () => {
+		const state = {};
+		const admission = createCloudflareInstanceRunAdmission(state);
 		const lease = await admission.acquire({ agentName: 'hello', instanceId: 'inst_a', runId: 'run_1' });
 		expect(lease).not.toBeNull();
 		expect(await admission.acquire({ agentName: 'hello', instanceId: 'inst_a', runId: 'run_2' })).toBeNull();
 		await lease?.release();
 		expect(await admission.acquire({ agentName: 'hello', instanceId: 'inst_a', runId: 'run_3' })).not.toBeNull();
+	});
+
+	it('drops active run state when a DO state object is recreated', async () => {
+		const active = await createCloudflareInstanceRunAdmission({}).acquire({
+			agentName: 'hello',
+			instanceId: 'inst_a',
+			runId: 'run_1',
+		});
+		expect(active).toBeTruthy();
+		expect(
+			await createCloudflareInstanceRunAdmission({}).acquire({
+				agentName: 'hello',
+				instanceId: 'inst_a',
+				runId: 'run_2',
+			}),
+		).toBeTruthy();
 	});
 });
 
