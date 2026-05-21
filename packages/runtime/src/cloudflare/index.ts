@@ -25,3 +25,5 @@ export { createDurableRegistrationStore } from './registration-store.ts';
 export { FlueRegistry } from './registry-do.ts';
 export { createCloudflareRunRegistry } from './run-registry.ts';
 export { createCloudflareInstanceRunAdmission } from './instance-admission.ts';
+export { createCloudflareAgentRequestRouter } from './route-agent-request.ts';
+export type { CloudflareAgentRequestRouterOptions } from './route-agent-request.ts';

@@ -69,6 +69,7 @@ export class CloudflarePlugin implements BuildPlugin {
 				return `export class ${className} extends Agent {
   flueInstanceRunState = {};
   flueRegistrationState = {};
+  flueAgentRequestRouter;
 
   async onRequest(request) {
     return dispatchAgent(request, this, ${JSON.stringify(a.name)}, ${handlerVar});
@@ -112,7 +113,6 @@ import {
   createRunSubscriberRegistry,
   bashFactoryToSessionEnv,
   resolveModel,
-  handleAgentRequest,
   handleRunRouteRequest,
   configureFlueRuntime,
   createDefaultFlueApp,
@@ -127,6 +127,7 @@ import {
   createDurableDefaultWorkspaceStore,
   createDurableRegistrationStore,
   createCloudflareInstanceRunAdmission,
+  createCloudflareAgentRequestRouter,
 } from '@flue/runtime/cloudflare';
 import { registerApiProvider, registerProvider } from '@flue/runtime/app';
 
@@ -338,43 +339,18 @@ async function dispatchAgent(request, doInstance, agentName, handler) {
     });
   }
 
-  return handleAgentRequest({
-    request,
+  doInstance.flueAgentRequestRouter ??= createCloudflareAgentRequestRouter({
     agentName,
-    id,
-    handler,
-    runStore: createRunStoreForRequest(doInstance),
-    instanceAdmission: createInstanceAdmissionForRequest(doInstance),
-    runSubscribers,
-    runRegistry: createRunRegistryForRequest(doInstance.env),
-    createContext: (agentName_, id_, runId, payload, req) => createContextForRequest(agentName_, id_, runId, payload, doInstance, req),
-    startWebhook: (runId, run) => {
-      const wrapped = (fiber) => {
-        fiber?.stash?.({
-          version: 1,
-          kind: 'webhook',
-          agentName,
-          id,
-          runId,
-          phase: 'running',
-          startedAt: Date.now(),
-        });
-        return runWithInstanceContext(doInstance, run);
-      };
-      assertAgentsDurabilityApi(doInstance, 'runFiber');
-      return doInstance.runFiber('flue:webhook:' + runId, wrapped);
-    },
-    runHandler: (ctx, h) => runWithInstanceContext(doInstance, () => {
+    instanceId: id,
+    module: handler,
+    createContext: ({ runId, payload, request }) => createContextForRequest(agentName, id, runId, payload, doInstance, request),
+    runInCloudflareContext: (fn) => runWithInstanceContext(doInstance, fn),
+    keepAliveWhile: (fn) => {
       assertAgentsDurabilityApi(doInstance, 'keepAliveWhile');
-      return doInstance.keepAliveWhile(() => h(ctx));
-    }),
-    startBackground: (work) => {
-      assertAgentsDurabilityApi(doInstance, 'keepAliveWhile');
-      void doInstance.keepAliveWhile(() => runWithInstanceContext(doInstance, work)).catch((error) => {
-        console.error('[flue] Detached sync run finalization failed:', error);
-      });
+      return doInstance.keepAliveWhile(fn);
     },
   });
+  return doInstance.flueAgentRequestRouter(request);
 }
 
 function parseRunRoute(request) {
