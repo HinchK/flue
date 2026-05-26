@@ -28,6 +28,26 @@ describe('Vite markdown import plugin', () => {
 		expect(module.content).toBe('Typed instructions.\n');
 	});
 
+	it('resolves root-relative attributed markdown through Vite', async () => {
+		const root = createFixtureRoot();
+		writeModule(root, 'instructions/proposal.md', 'Root-relative instructions.\n');
+		writeModule(root, 'src/entry.ts', `import instructions from '/instructions/proposal.md' with { type: 'markdown' };\nexport { instructions };\n`);
+
+		const module = await importBuiltFixture(await buildFixture(root));
+
+		expect(module.instructions).toBe('Root-relative instructions.\n');
+	});
+
+	it('resolves aliased attributed markdown through Vite', async () => {
+		const root = createFixtureRoot();
+		writeModule(root, 'instructions/proposal.md', 'Aliased instructions.\n');
+		writeModule(root, 'src/entry.ts', `import instructions from '@instructions/proposal.md' with { type: 'markdown' };\nexport { instructions };\n`);
+
+		const module = await importBuiltFixture(await buildFixture(root, false, { '@instructions': path.join(root, 'instructions') }));
+
+		expect(module.instructions).toBe('Aliased instructions.\n');
+	});
+
 	it('supports attributed markdown barrel re-exports', async () => {
 		const root = createFixtureRoot();
 		writeModule(root, 'instructions/proposal.md', 'Re-exported instructions.\n');
@@ -73,6 +93,16 @@ describe('Vite markdown import plugin', () => {
 
 		await expect(buildFixture(root, true)).rejects.toThrow("SKILL.md imports must use an import attribute: with { type: 'skill' }");
 	});
+
+	it.each(['skill.md', 'NOTSKILL.md'])('imports noncanonical %s files as markdown text', async (filename) => {
+		const root = createFixtureRoot();
+		writeModule(root, `instructions/${filename}`, 'Ordinary markdown.\n');
+		writeModule(root, 'src/entry.ts', `import instructions from '../instructions/${filename}' with { type: 'markdown' };\nexport { instructions };\n`);
+
+		const module = await importBuiltFixture(await buildFixture(root, true));
+
+		expect(module.instructions).toBe('Ordinary markdown.\n');
+	});
 });
 
 function createFixtureRoot(): string {
@@ -85,11 +115,13 @@ function writeModule(root: string, relativePath: string, content: string): void 
 	fs.writeFileSync(absolutePath, content);
 }
 
-async function buildFixture(root: string, includeSkillPlugin = false): Promise<string> {
+async function buildFixture(root: string, includeSkillPlugin = false, alias: Record<string, string> = {}): Promise<string> {
 	const outDir = path.join(root, 'dist');
 	await viteBuild({
 		configFile: false,
+		root,
 		logLevel: 'silent',
+		resolve: { alias },
 		plugins: [markdownImportPlugin(), ...(includeSkillPlugin ? [skillReferencePlugin({ root })] : [])],
 		build: {
 			outDir,

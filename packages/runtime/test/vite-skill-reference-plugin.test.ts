@@ -160,6 +160,24 @@ describe('Vite skill-reference plugin', () => {
 		await expect(buildFixture(root, createFixturePlugin(root))).rejects.toThrow('must use an import attribute');
 	});
 
+	it.each(['skill.md', 'NOTSKILL.md'])('does not reserve noncanonical markdown filename %s as a skill', async (filename) => {
+		const root = createFixtureRoot();
+		writeModule(root, `src/${filename}`, 'Ordinary markdown.\n');
+		writeModule(root, 'src/entry.ts', `import markdown from './${filename}?raw';\nexport const marker = markdown;\n`);
+
+		const module = await importBuiltFixture(await buildFixture(root, createFixturePlugin(root)));
+
+		expect(module.marker).toBe('Ordinary markdown.\n');
+	});
+
+	it.each(['skill.md', 'NOTSKILL.md'])('rejects noncanonical skill-reference target %s', async (filename) => {
+		const root = createFixtureRoot();
+		writeModule(root, `src/${filename}`, 'Not a packaged skill.\n');
+		writeModule(root, 'src/entry.ts', `import review from './${filename}' with { type: 'skill' };\nexport { review };\n`);
+
+		await expect(buildFixture(root, createFixturePlugin(root))).rejects.toThrow('Skill imports must target a SKILL.md file');
+	});
+
 	it('rejects directly spelled internal module IDs', async () => {
 		const root = createFixtureRoot();
 		writeModule(root, 'src/entry.ts', `import review from '__x00__flue-skill:/tmp/review/SKILL.md';\nexport { review };\n`);

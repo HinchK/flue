@@ -72,7 +72,7 @@ export function skillReferencePlugin(options: SkillReferencePluginOptions): Plug
 				return source;
 			}
 			if (!importer) return null;
-			if (/SKILL\.md(?:[?#].*)?$/i.test(source)) {
+			if (isSkillMarkdownPath(source)) {
 				throw new Error(
 					`[flue] Markdown import "${source}" must use an import attribute: with { type: 'skill' }.`,
 				);
@@ -284,6 +284,10 @@ function isAuthorizedPackagedStoreImporter(importer: string | undefined, bootstr
 	return bootstrapEntries.has(canonicalPath(importer.split('?')[0] ?? importer));
 }
 
+function isSkillMarkdownPath(specifier: string): boolean {
+	return path.basename(specifier.split(/[?#]/, 1)[0] ?? '') === 'SKILL.md';
+}
+
 interface ModuleAst {
 	body: unknown[];
 }
@@ -312,7 +316,7 @@ function collectAttributedSkillReferences(ast: ModuleAst): AttributedSkillRefere
 			return key === 'type' && attribute.value?.value === 'skill';
 		});
 		if (!skillAttribute) continue;
-		if (!/SKILL\.md$/i.test(specifier)) {
+		if (!isSkillMarkdownPath(specifier)) {
 			throw new Error(`[flue] Skill imports must target a SKILL.md file: ${specifier}`);
 		}
 		const start = declaration.source?.start;
@@ -329,7 +333,7 @@ function assertNoDynamicSkillImports(ast: ModuleAst): void {
 	visitAst(ast, (node) => {
 		if (node.type !== 'ImportExpression') return;
 		const specifier = node.source?.value;
-		if (typeof specifier === 'string' && /SKILL\.md(?:[?#].*)?$/i.test(specifier)) {
+		if (typeof specifier === 'string' && isSkillMarkdownPath(specifier)) {
 			throw new Error(`[flue] Dynamic SKILL.md import "${specifier}" is unsupported. Use a static import with { type: 'skill' }.`);
 		}
 	});

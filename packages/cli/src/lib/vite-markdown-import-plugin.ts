@@ -6,9 +6,13 @@ import { transformWithOxc } from 'vite';
 const MARKDOWN_MODULE_PREFIX = '\0flue-markdown:';
 
 export function markdownImportPlugin(): Plugin {
+	let root = '';
 	return {
 		name: 'flue-markdown-import',
 		enforce: 'pre',
+		configResolved(config) {
+			root = config.root;
+		},
 		async transform(code, id) {
 			if (!/\.[cm]?[jt]sx?(?:\?|$)/i.test(id)) return null;
 			const importerPath = id.split('?')[0] ?? id;
@@ -20,8 +24,19 @@ export function markdownImportPlugin(): Plugin {
 			if (declarations.length === 0) return null;
 			let transformed = parseableCode;
 			for (const declaration of declarations.sort((a, b) => b.start - a.start)) {
-				const markdownPath = path.resolve(path.dirname(importerPath), declaration.specifier);
-				transformed = `${transformed.slice(0, declaration.start)}${JSON.stringify(`${MARKDOWN_MODULE_PREFIX}${markdownPath}`)}${transformed.slice(declaration.end)}`;
+				const rootRelativePath = declaration.specifier.startsWith('/')
+					? path.resolve(root, declaration.specifier.slice(1))
+					: undefined;
+				const resolved = rootRelativePath
+					? { id: rootRelativePath, external: false }
+					: await this.resolve(declaration.specifier, importerPath, { skipSelf: true });
+				if (!resolved || resolved.external) {
+					throw new Error(`[flue] Unable to resolve markdown import: ${declaration.specifier}`);
+				}
+				if (isSkillMarkdownPath(resolved.id)) {
+					throw new Error(`[flue] SKILL.md imports must use an import attribute: with { type: 'skill' }.`);
+				}
+				transformed = `${transformed.slice(0, declaration.start)}${JSON.stringify(`${MARKDOWN_MODULE_PREFIX}${resolved.id}`)}${transformed.slice(declaration.end)}`;
 			}
 			return { code: transformed, map: null };
 		},
@@ -66,7 +81,7 @@ function collectAttributedMarkdownImports(ast: ModuleAst): AttributedMarkdownImp
 			return key === 'type' && attribute.value?.value === 'markdown';
 		});
 		if (!markdownAttribute) continue;
-		if (/SKILL\.md$/i.test(specifier)) {
+		if (isSkillMarkdownPath(specifier)) {
 			throw new Error(`[flue] SKILL.md imports must use an import attribute: with { type: 'skill' }.`);
 		}
 		if (!/\.md$/i.test(specifier)) {
@@ -80,4 +95,8 @@ function collectAttributedMarkdownImports(ast: ModuleAst): AttributedMarkdownImp
 		imports.push({ specifier, start, end });
 	}
 	return imports;
+}
+
+function isSkillMarkdownPath(specifier: string): boolean {
+	return path.basename(specifier.split(/[?#]/, 1)[0] ?? '') === 'SKILL.md';
 }
