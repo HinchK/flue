@@ -89,6 +89,8 @@ describe('CloudflarePlugin', () => {
 		expect(entry).toContain('return fetchAgent(binding, target.instanceId, request)');
 		expect(entry).toContain('(await getAgentByName(binding, instanceId)).fetch(request)');
 		expect(entry).not.toContain("routeAgentRequest } from 'agents'");
+		expect(entry).not.toContain('  handleAgentRequest,');
+		expect(entry).not.toContain('function isInternalDispatchRequest(request)');
 	});
 });
 

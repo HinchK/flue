@@ -313,7 +313,18 @@ class SqlAgentSubmissionStoreImpl implements SqlAgentSubmissionStore {
 				completedBefore,
 			);
 		}
-		this.sql.exec('DELETE FROM flue_agent_dispatch_receipts WHERE settled_at < ?', completedBefore);
+		this.sql.exec(
+			`DELETE FROM flue_agent_dispatch_receipts
+			 WHERE dispatch_id IN (
+			   SELECT dispatch_id
+			   FROM flue_agent_dispatch_receipts
+			   WHERE settled_at < ?
+			   ORDER BY settled_at ASC, dispatch_id ASC
+			   LIMIT ?
+			 )`,
+			completedBefore,
+			limit,
+		);
 		return rows.length;
 	}
 
@@ -672,5 +683,8 @@ function ensureSubmissionTable(sql: SqlStorage): void {
 	);
 	sql.exec(
 		'CREATE INDEX IF NOT EXISTS flue_agent_submissions_session_status_sequence_idx ON flue_agent_submissions (session_key, status, sequence ASC)',
+	);
+	sql.exec(
+		'CREATE INDEX IF NOT EXISTS flue_agent_dispatch_receipts_settled_at_dispatch_id_idx ON flue_agent_dispatch_receipts (settled_at ASC, dispatch_id ASC)',
 	);
 }

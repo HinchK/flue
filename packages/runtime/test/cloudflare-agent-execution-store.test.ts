@@ -148,6 +148,21 @@ describe('createSqlAgentExecutionStore()', () => {
 			{ name: 'flue_agent_submissions_status_sequence_idx' },
 			{ name: 'sqlite_autoindex_flue_agent_submissions_1' },
 		]);
+		expect(
+			db
+				.prepare(
+					"SELECT name FROM sqlite_schema WHERE type = 'index' AND tbl_name = 'flue_agent_dispatch_receipts' ORDER BY name",
+				)
+				.all(),
+		).toEqual([
+			{ name: 'flue_agent_dispatch_receipts_settled_at_dispatch_id_idx' },
+			{ name: 'sqlite_autoindex_flue_agent_dispatch_receipts_1' },
+		]);
+		expect(
+			db
+				.prepare("SELECT name FROM pragma_index_info('flue_agent_dispatch_receipts_settled_at_dispatch_id_idx') ORDER BY seqno")
+				.all(),
+		).toEqual([{ name: 'settled_at' }, { name: 'dispatch_id' }]);
 	});
 
 	it('admits one queued dispatch row when the same submission is replayed', () => {
@@ -506,6 +521,35 @@ describe('createSqlAgentExecutionStore()', () => {
 		expect(store.submissions.cleanupTerminalSubmissions(2, 1)).toBe(0);
 		expect(db.prepare('SELECT dispatch_id FROM flue_agent_dispatch_receipts').all()).toEqual([]);
 		expect(store.submissions.getSubmission('active')).toMatchObject({ status: 'queued' });
+	});
+
+	it('sweeps expired dispatch receipts in bounded batches', async () => {
+		const { db, sql, transactionSync } = makeFakeSql();
+		const store = createSqlAgentExecutionStore({ sql, transactionSync }, 'FlueAssistantAgent');
+		store.submissions.admitDispatch(dispatchInput({ dispatchId: 'expired-1' }));
+		store.submissions.claimSubmission(attempt('expired-1', 'attempt-1'));
+		store.submissions.completeSubmission(attempt('expired-1', 'attempt-1'));
+		await store.submissions.deleteSession('agent-session:["agent-1","default","default"]', async () => {});
+		store.submissions.admitDispatch(dispatchInput({ dispatchId: 'expired-2', session: 'other' }));
+		store.submissions.claimSubmission(attempt('expired-2', 'attempt-2'));
+		store.submissions.completeSubmission(attempt('expired-2', 'attempt-2'));
+		await store.submissions.deleteSession('agent-session:["agent-1","default","other"]', async () => {});
+		store.submissions.admitDispatch(dispatchInput({ dispatchId: 'retained', session: 'retained' }));
+		store.submissions.claimSubmission(attempt('retained', 'attempt-3'));
+		store.submissions.completeSubmission(attempt('retained', 'attempt-3'));
+		await store.submissions.deleteSession('agent-session:["agent-1","default","retained"]', async () => {});
+		db.prepare('UPDATE flue_agent_dispatch_receipts SET settled_at = ? WHERE dispatch_id != ?').run(1, 'retained');
+
+		store.submissions.cleanupTerminalSubmissions(2, 1);
+
+		expect(db.prepare('SELECT dispatch_id FROM flue_agent_dispatch_receipts ORDER BY dispatch_id').all()).toEqual([
+			{ dispatch_id: 'expired-2' },
+			{ dispatch_id: 'retained' },
+		]);
+		store.submissions.cleanupTerminalSubmissions(2, 1);
+		expect(db.prepare('SELECT dispatch_id FROM flue_agent_dispatch_receipts ORDER BY dispatch_id').all()).toEqual([
+			{ dispatch_id: 'retained' },
+		]);
 	});
 
 	it('rejects missing Durable Object SQLite with migration guidance', () => {

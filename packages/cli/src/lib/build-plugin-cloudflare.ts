@@ -189,7 +189,6 @@ import {
   createRunSubscriberRegistry,
   bashFactoryToSessionEnv,
   resolveModel,
-  handleAgentRequest,
   handleWorkflowRequest,
   handleRunRouteRequest,
   failRecoveredRun,
@@ -566,10 +565,6 @@ function workflowRuntimeIdentity(workflowName) {
 
 function agentRuntimeIdentity(agentName) {
   return agentIdentities[agentName];
-}
-
-function isInternalDispatchRequest(request) {
-  return request.method === 'POST' && new URL(request.url).pathname === INTERNAL_DISPATCH_PATH;
 }
 
 function parseWorkflowStart(request, workflowName) {

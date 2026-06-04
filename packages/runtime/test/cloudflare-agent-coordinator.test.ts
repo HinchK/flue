@@ -1,9 +1,17 @@
 import { DatabaseSync } from 'node:sqlite';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FlueContextInternal } from '../src/client.ts';
 import { createCloudflareAgentRuntime } from '../src/cloudflare/agent-coordinator.ts';
 import type { SqlAgentExecutionStore } from '../src/cloudflare/agent-execution-store.ts';
-import type { AgentSubmissionInspection, AgentSubmissionInterruption } from '../src/runtime/agent-submissions.ts';
+import type {
+	AgentSubmissionInspection,
+	AgentSubmissionInterruption,
+	DirectAgentSubmissionInput,
+} from '../src/runtime/agent-submissions.ts';
+
+afterEach(() => {
+	vi.restoreAllMocks();
+});
 
 function makeFakeSql(events: string[] = []) {
 	const db = new DatabaseSync(':memory:');
@@ -116,15 +124,16 @@ function makeRecoveryContext(options: {
 	return { ctx, terminalRecords };
 }
 
-function directInput() {
+function directInput(overrides: Partial<DirectAgentSubmissionInput> = {}): DirectAgentSubmissionInput {
 	return {
-		kind: 'direct' as const,
+		kind: 'direct',
 		submissionId: 'direct-1',
 		agent: 'assistant',
 		id: 'agent-1',
 		session: 'default',
 		payload: { message: 'Hello' },
 		acceptedAt: '2026-06-03T00:00:00.000Z',
+		...overrides,
 	};
 }
 
@@ -325,6 +334,123 @@ describe('createCloudflareAgentRuntime()', () => {
 		await runtime.onStart(instance, () => {});
 
 		expect(executionStore.submissions.getSubmission('direct-1')).toMatchObject({ status: 'completed' });
+	});
+
+	it('starts unrelated queued sessions when interrupted-session inspection fails', async () => {
+		const { storage } = makeFakeSql();
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		let resolveProcessed!: () => void;
+		const processed = new Promise<void>((resolve) => {
+			resolveProcessed = resolve;
+		});
+		const runtime = makeRuntime({
+			createdAgent: {} as never,
+			createContext: () => {
+				return {
+					async initializeCreatedAgent() {
+						return {
+							async session() {
+								return {
+									inspectSubmissionInput() {
+										throw new Error('snapshot inspection failed');
+									},
+									async processSubmissionInput(input: DirectAgentSubmissionInput) {
+										if (input.session === 'healthy') resolveProcessed();
+									},
+								};
+							},
+						};
+					},
+					setEventCallback() {},
+				} as unknown as FlueContextInternal;
+			},
+		});
+		const instance = makeInstance(storage);
+		instance.runFiber = async (_name, callback) => callback({ stash() {} });
+		const executionStore = prepare(runtime, instance);
+		executionStore.submissions.admitDirect(directInput());
+		executionStore.submissions.claimSubmission({ submissionId: 'direct-1', attemptId: 'attempt-1' });
+		executionStore.submissions.admitDirect(directInput({ submissionId: 'direct-2', session: 'healthy' }));
+
+		await runtime.onStart(instance, () => {});
+		await processed;
+
+		expect(executionStore.submissions.getSubmission('direct-1')).toMatchObject({ status: 'running' });
+		await vi.waitFor(() => {
+			expect(executionStore.submissions.getSubmission('direct-2')).toMatchObject({ status: 'completed' });
+		});
+		expect(consoleError).toHaveBeenCalledWith(
+			'[flue:submission-reconciliation]',
+			expect.objectContaining({
+				submissionId: 'direct-1',
+				operation: 'reconcile_submission',
+				outcome: 'deferred_to_scheduled_wake',
+			}),
+			expect.any(Error),
+		);
+	});
+
+	it('claims unrelated queued sessions when another attempt fails to start synchronously', async () => {
+		const { storage } = makeFakeSql();
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		let startCalls = 0;
+		const runtime = makeRuntime();
+		const instance = makeInstance(storage);
+		instance.runFiber = (_name, _callback) => {
+			startCalls += 1;
+			if (startCalls === 1) throw new Error('Fiber startup failed');
+			return new Promise<void>(() => {});
+		};
+		const executionStore = prepare(runtime, instance);
+		executionStore.submissions.admitDirect(directInput());
+		executionStore.submissions.admitDirect(directInput({ submissionId: 'direct-2', session: 'healthy' }));
+
+		await runtime.onStart(instance, () => {});
+
+		expect(startCalls).toBe(2);
+		expect(executionStore.submissions.getSubmission('direct-1')).toMatchObject({ status: 'running' });
+		expect(executionStore.submissions.getSubmission('direct-2')).toMatchObject({ status: 'running' });
+		expect(consoleError).toHaveBeenCalledWith(
+			'[flue:submission-reconciliation]',
+			expect.objectContaining({
+				submissionId: 'direct-1',
+				operation: 'start_submission',
+				outcome: 'deferred_to_scheduled_wake',
+			}),
+			expect.any(Error),
+		);
+	});
+
+	it('retries a synchronously failed attempt on a later wake when canonical input is absent', async () => {
+		const events: string[] = [];
+		const { storage } = makeFakeSql(events);
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		const recovery = makeRecoveryContext({ inspection: 'absent' });
+		let startCalls = 0;
+		const runtime = makeRuntime({
+			createdAgent: {} as never,
+			createContext: () => recovery.ctx,
+		});
+		const instance = makeInstance(storage);
+		instance.runFiber = (_name, _callback) => {
+			startCalls += 1;
+			if (startCalls === 1) throw new Error('Fiber startup failed');
+			return new Promise<void>(() => {});
+		};
+		const executionStore = prepare(runtime, instance);
+		executionStore.submissions.admitDirect(directInput());
+
+		await runtime.onStart(instance, () => {});
+		const failedAttempt = executionStore.submissions.getSubmission('direct-1')?.attemptId;
+		await runtime.wakeSubmissions(instance);
+
+		expect(startCalls).toBe(2);
+		expect(events).toContain('requeue');
+		expect(executionStore.submissions.getSubmission('direct-1')).toMatchObject({
+			status: 'running',
+			attemptId: expect.any(String),
+		});
+		expect(executionStore.submissions.getSubmission('direct-1')?.attemptId).not.toBe(failedAttempt);
 	});
 
 	it('uses the public dispatch input as processing context payload without internal envelope fields', async () => {

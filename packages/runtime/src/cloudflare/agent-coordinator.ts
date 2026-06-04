@@ -368,14 +368,23 @@ class CloudflareAgentCoordinator {
 					submission.recoveryRequestedAt === undefined
 				)
 					continue;
-				await this.reconcileInterruptedSubmission(submission);
+				try {
+					await this.reconcileInterruptedSubmission(submission);
+				} catch (error) {
+					this.logSubmissionReconciliationFailure(submission, 'reconcile_submission', error);
+				}
 			}
 			for (const submission of this.submissions.listRunnableSubmissions()) {
 				const claimed = this.submissions.claimSubmission({
 					submissionId: submission.submissionId,
 					attemptId: crypto.randomUUID(),
 				});
-				if (claimed) this.startSubmissionAttempt(claimed);
+				if (!claimed) continue;
+				try {
+					this.startSubmissionAttempt(claimed);
+				} catch (error) {
+					this.logSubmissionReconciliationFailure(claimed, 'start_submission', error);
+				}
 			}
 		} catch (error) {
 			console.error(
@@ -391,6 +400,26 @@ class CloudflareAgentCoordinator {
 			return true;
 		}
 		return this.submissions.hasUnsettledSubmissions();
+	}
+
+	private logSubmissionReconciliationFailure(
+		submission: SqlAgentSubmission,
+		operation: 'reconcile_submission' | 'start_submission',
+		error: unknown,
+	): void {
+		console.error(
+			'[flue:submission-reconciliation]',
+			{
+				agentName: this.agentName,
+				instanceId: this.instance.name,
+				submissionId: submission.submissionId,
+				sessionKey: submission.sessionKey,
+				attemptId: submission.attemptId,
+				operation,
+				outcome: 'deferred_to_scheduled_wake',
+			},
+			error,
+		);
 	}
 
 	private async reconcileInterruptedSubmission(submission: SqlAgentSubmission): Promise<void> {
