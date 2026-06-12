@@ -170,7 +170,6 @@ describe('createCloudflareAgentRuntime()', () => {
 			appendEvent: vi.fn(),
 			closeStream: vi.fn(),
 			subscribe: vi.fn(),
-			deleteStream: vi.fn(),
 		};
 		const createEventStreamStore = vi.fn(() => store);
 		const runtime = makeRuntime({ createEventStreamStore });

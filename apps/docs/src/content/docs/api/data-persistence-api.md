@@ -220,7 +220,6 @@ interface EventStreamStore {
   closeStream(path: string): Promise<void>;
   getStreamMeta(path: string): Promise<EventStreamMeta | null>;
   subscribe(path: string, listener: () => void): () => void;
-  deleteStream(path: string): Promise<void>;
 }
 ```
 

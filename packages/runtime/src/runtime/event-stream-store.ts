@@ -116,9 +116,6 @@ export interface EventStreamStore {
 	 * is adapter-dependent and not part of the current contract.
 	 */
 	subscribe(path: string, listener: () => void): () => void;
-
-	/** Delete a stream and all its events. */
-	deleteStream(path: string): Promise<void>;
 }
 
 // ─── SQLite implementation ──────────────────────────────────────────────────
@@ -310,23 +307,10 @@ export class SqliteEventStreamStore implements EventStreamStore {
 		bucket.add(listener);
 		return () => {
 			bucket!.delete(listener);
-			// Only remove the map entry if it still holds this bucket;
-			// deleteStream may have detached it and a newer bucket may have
-			// been installed for a recreated stream since.
-			if (bucket!.size === 0 && this.listeners.get(path) === bucket) {
+			if (bucket!.size === 0) {
 				this.listeners.delete(path);
 			}
 		};
-	}
-
-	async deleteStream(path: string): Promise<void> {
-		this.sql.exec(`DELETE FROM flue_event_stream_entries WHERE path = ?`, path);
-		this.sql.exec(`DELETE FROM flue_event_streams WHERE path = ?`, path);
-		// Notify subscribers before removing them so long-poll/SSE readers
-		// wake immediately rather than hanging until timeout.
-		this.notifyListeners(path);
-		this.listeners.get(path)?.clear();
-		this.listeners.delete(path);
 	}
 
 	// ─── Private ────────────────────────────────────────────────────────
