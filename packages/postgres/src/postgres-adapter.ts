@@ -353,7 +353,7 @@ async function ensureTables(runner: PgRunner): Promise<void> {
 		await tx.query(`
 			CREATE TABLE IF NOT EXISTS flue_event_streams (
 				path         TEXT PRIMARY KEY,
-				next_offset  INTEGER NOT NULL DEFAULT 0,
+				next_offset  BIGINT NOT NULL DEFAULT 0,
 				closed       BOOLEAN NOT NULL DEFAULT FALSE
 			)
 		`);
@@ -361,7 +361,7 @@ async function ensureTables(runner: PgRunner): Promise<void> {
 		await tx.query(`
 			CREATE TABLE IF NOT EXISTS flue_event_stream_entries (
 				path    TEXT NOT NULL,
-				seq     INTEGER NOT NULL,
+				seq     BIGINT NOT NULL,
 				data    TEXT NOT NULL,
 				PRIMARY KEY (path, seq)
 			)
