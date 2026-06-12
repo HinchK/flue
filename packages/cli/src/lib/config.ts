@@ -292,6 +292,16 @@ export async function resolveConfig(opts: ResolveConfigOptions): Promise<Resolve
 	});
 	const sourceRoot = resolveSourceRoot(root);
 
+	// Writing build artifacts into the project itself is never sensible: the
+	// dev watcher would see the build's own writes and rebuild forever, and
+	// production builds that empty the output dir would delete project sources.
+	if (output === root || output === sourceRoot) {
+		throw new Error(
+			`[flue] \`output\` resolves to the project ${output === root ? 'root' : 'source root'} (${output}). ` +
+				'Build artifacts must go in a separate directory, e.g. `dist/`.',
+		);
+	}
+
 	return {
 		configPath,
 		userConfig: merged,
