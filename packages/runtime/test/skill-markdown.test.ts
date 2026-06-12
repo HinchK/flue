@@ -128,8 +128,28 @@ describe('parseSkillMarkdown()', () => {
 				path: '/skills/PDF-processing/SKILL.md',
 			}),
 		).toThrow(
-			'[flue] Skill /skills/PDF-processing/SKILL.md frontmatter name "PDF-processing" must contain only lowercase letters, numbers, and single internal hyphens. Use a spec-compliant value such as "review-pr".',
+			'[flue] Skill /skills/PDF-processing/SKILL.md frontmatter name "PDF-processing" must contain only lowercase letters, numbers, and hyphens. Use a spec-compliant value such as "review-pr".',
 		);
+	});
+
+	it('rejects consecutive hyphens when a skill name violates Agent Skills hyphen rules', () => {
+		expect(() =>
+			parseSkillMarkdown('---\nname: pdf--processing\ndescription: Useful.\n---\nBody', {
+				directoryName: 'pdf--processing',
+				path: '/skills/pdf--processing/SKILL.md',
+			}),
+		).toThrow(
+			'[flue] Skill /skills/pdf--processing/SKILL.md frontmatter name "pdf--processing" must not start or end with a hyphen or contain consecutive hyphens. Use a spec-compliant value such as "review-pr".',
+		);
+	});
+
+	it('accepts a unicode skill name when it matches the directory name', () => {
+		expect(
+			parseSkillMarkdown('---\nname: café-notes\ndescription: Useful.\n---\nBody', {
+				directoryName: 'café-notes',
+				path: '/skills/café-notes/SKILL.md',
+			}),
+		).toMatchObject({ name: 'café-notes' });
 	});
 
 	it('rejects a directory mismatch when a skill name differs from its directory', () => {
@@ -152,6 +172,38 @@ describe('parseSkillMarkdown()', () => {
 		).toThrow(
 			'[flue] Skill /skills/pdf-processing/SKILL.md frontmatter description exceeds the 1024-character Agent Skills limit. Shorten "description" to a concise one-line summary.',
 		);
+	});
+
+	it('keeps unquoted scalar metadata values as strings when YAML would type them', () => {
+		expect(
+			parseSkillMarkdown(
+				'---\nname: pdf-processing\ndescription: Useful.\nmetadata:\n  version: 1.0\n  beta: true\n---\nBody',
+				{
+					directoryName: 'pdf-processing',
+					path: '/skills/pdf-processing/SKILL.md',
+				},
+			).metadata,
+		).toEqual({ version: '1.0', beta: 'true' });
+	});
+
+	it('ignores unknown frontmatter fields when a third-party skill carries host-specific extras', () => {
+		expect(
+			parseSkillMarkdown(
+				'---\nname: pdf-processing\ndescription: Useful.\nversion: 2.1\nauthor: example-org\n---\nBody',
+				{
+					directoryName: 'pdf-processing',
+					path: '/skills/pdf-processing/SKILL.md',
+				},
+			),
+		).toEqual({
+			name: 'pdf-processing',
+			description: 'Useful.',
+			body: 'Body',
+			license: undefined,
+			compatibility: undefined,
+			metadata: undefined,
+			allowedTools: undefined,
+		});
 	});
 
 	it('parses allowed tools when frontmatter provides a whitespace-separated list', () => {

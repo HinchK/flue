@@ -1,4 +1,4 @@
-import { load } from 'js-yaml';
+import { FAILSAFE_SCHEMA, load } from 'js-yaml';
 
 export interface ParsedSkillMarkdown {
 	name: string;
@@ -28,9 +28,13 @@ export function parseSkillMarkdown(
 		);
 	}
 
+	// The Agent Skills reference implementation (skills-ref) parses frontmatter
+	// with strictyaml, where every scalar is a string. FAILSAFE_SCHEMA mirrors
+	// that, so unquoted values such as `version: 1.0` or `license: 2.0` stay
+	// strings instead of becoming typed scalars that fail string validation.
 	let raw: unknown;
 	try {
-		raw = load(match[1] ?? '');
+		raw = load(match[1] ?? '', { schema: FAILSAFE_SCHEMA });
 	} catch (error) {
 		const detail = error instanceof Error ? ` ${error.message}` : '';
 		throw new Error(`[flue] Skill ${options.path} has invalid YAML frontmatter.${detail}`);
@@ -39,10 +43,13 @@ export function parseSkillMarkdown(
 		throw new Error(`[flue] Skill ${options.path} frontmatter must be a YAML mapping.`);
 	}
 
+	// Unknown frontmatter fields are deliberately ignored: `skills-ref validate`
+	// flags them, but rejecting them at load time would break otherwise-valid
+	// third-party skills carrying host-specific extras.
 	const name = requireString(raw.name, options.path, 'name');
 	validateSkillName(name, options);
 	const description = requireString(raw.description, options.path, 'description');
-	if (description.length > 1024) {
+	if ([...description].length > 1024) {
 		throw new Error(
 			`[flue] Skill ${options.path} frontmatter description exceeds the 1024-character Agent Skills limit. Shorten "description" to a concise one-line summary.`,
 		);
@@ -50,7 +57,7 @@ export function parseSkillMarkdown(
 
 	const license = optionalString(raw.license, options.path, 'license');
 	const compatibility = optionalString(raw.compatibility, options.path, 'compatibility');
-	if (compatibility !== undefined && compatibility.length > 500) {
+	if (compatibility !== undefined && [...compatibility].length > 500) {
 		throw new Error(`[flue] Skill ${options.path} compatibility must be at most 500 characters.`);
 	}
 
@@ -65,16 +72,25 @@ export function parseSkillMarkdown(
 	};
 }
 
+// Mirrors skills-ref name validation: Unicode lowercase letters and numbers
+// plus hyphens, no leading/trailing/consecutive hyphens, NFKC-normalized
+// comparison against the directory name.
 function validateSkillName(name: string, options: ParseSkillMarkdownOptions): void {
-	if (name.length > 64) {
+	const normalized = name.normalize('NFKC');
+	if ([...normalized].length > 64) {
 		throw new Error(`[flue] Skill ${options.path} name must be at most 64 characters.`);
 	}
-	if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
+	if (!/^[\p{L}\p{N}-]+$/u.test(normalized) || normalized !== normalized.toLowerCase()) {
 		throw new Error(
-			`[flue] Skill ${options.path} frontmatter name "${name}" must contain only lowercase letters, numbers, and single internal hyphens. Use a spec-compliant value such as "review-pr".`,
+			`[flue] Skill ${options.path} frontmatter name "${name}" must contain only lowercase letters, numbers, and hyphens. Use a spec-compliant value such as "review-pr".`,
 		);
 	}
-	if (name !== options.directoryName) {
+	if (normalized.startsWith('-') || normalized.endsWith('-') || normalized.includes('--')) {
+		throw new Error(
+			`[flue] Skill ${options.path} frontmatter name "${name}" must not start or end with a hyphen or contain consecutive hyphens. Use a spec-compliant value such as "review-pr".`,
+		);
+	}
+	if (normalized !== options.directoryName.normalize('NFKC')) {
 		throw new Error(
 			`[flue] Skill ${options.path} declares frontmatter name "${name}", but Agent Skills requires it to match directory "${options.directoryName}"; names must match. Rename the directory or change "name" so they match.`,
 		);
@@ -90,12 +106,11 @@ function requireString(value: unknown, path: string, field: string): string {
 
 function optionalString(value: unknown, path: string, field: string): string | undefined {
 	if (value === undefined || value === null) return undefined;
-	if (typeof value !== 'string' || value.trim().length === 0) {
-		throw new Error(
-			`[flue] Skill ${path} frontmatter ${field} must be a non-empty string when provided.`,
-		);
+	if (typeof value !== 'string') {
+		throw new Error(`[flue] Skill ${path} frontmatter ${field} must be a string when provided.`);
 	}
-	return value.trim();
+	const trimmed = value.trim();
+	return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function parseMetadata(value: unknown, path: string): Record<string, string> | undefined {
@@ -105,13 +120,18 @@ function parseMetadata(value: unknown, path: string): Record<string, string> | u
 			`[flue] Skill ${path} frontmatter metadata must be a string-to-string mapping.`,
 		);
 	}
-	const entries = Object.entries(value);
-	if (entries.some(([, metadataValue]) => typeof metadataValue !== 'string')) {
-		throw new Error(
-			`[flue] Skill ${path} frontmatter metadata must be a string-to-string mapping. Quote scalar values such as version: "1.0".`,
-		);
-	}
-	return Object.fromEntries(entries as [string, string][]);
+	const entries = Object.entries(value).map(([key, metadataValue]) => {
+		// FAILSAFE_SCHEMA already keeps scalars as strings; an empty value
+		// parses as null, which skills-ref reads as the empty string.
+		if (metadataValue === null) return [key, ''] as const;
+		if (typeof metadataValue !== 'string') {
+			throw new Error(
+				`[flue] Skill ${path} frontmatter metadata must be a string-to-string mapping.`,
+			);
+		}
+		return [key, metadataValue] as const;
+	});
+	return Object.fromEntries(entries);
 }
 
 function parseAllowedTools(value: unknown, path: string): string[] | undefined {

@@ -1,7 +1,7 @@
 ---
 title: Skills
 description: Add Agent Skills to Flue agents and invoke them from sessions.
-lastReviewedAt: 2026-05-29
+lastReviewedAt: 2026-06-12
 ---
 
 Flue supports [Agent Skills](https://agentskills.io/specification): reusable instructions and supporting resources that agents can load for specialized, repeatable work, such as applying a review process, following an operational workflow, or using shared project guidance. Skills can be bundled with your application or supplied by the runtime workspace where an agent operates.
@@ -64,6 +64,21 @@ Flue also loads skills from the sandbox where a harness runs, with no import req
 Each discovered skill is available by its declared name without a TypeScript import or an entry in `skills`, and its supporting files remain in that sandbox workspace. This lets a repository checkout, CI environment, or prepared runtime workspace provide its own skills to a harness. See [Sandboxes](/docs/guide/sandboxes/) for controlling the filesystem and working directory visible at runtime.
 
 If an imported skill registered on an agent and a discovered workspace skill declare the same name, initialization fails rather than choosing one implicitly.
+
+## Frontmatter support
+
+Flue validates every `SKILL.md` against the [Agent Skills specification](https://agentskills.io/specification), whether the skill is imported or discovered in a workspace. The table below lists Flue's support level for each frontmatter field:
+
+| Field           | Spec     | Flue support                                                                                                                                                  |
+| --------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`          | Required | Validated: lowercase letters, numbers, and hyphens; no leading, trailing, or consecutive hyphens; at most 64 characters; must match the skill directory name. |
+| `description`   | Required | Validated: non-empty, at most 1024 characters. Tells the agent what the skill does and when to use it.                                                        |
+| `license`       | Optional | Accepted; informational only.                                                                                                                                 |
+| `compatibility` | Optional | Accepted; at most 500 characters; informational only.                                                                                                         |
+| `metadata`      | Optional | Accepted; string-to-string mapping; not interpreted by Flue.                                                                                                  |
+| `allowed-tools` | Optional | Accepted, not enforced. The field is experimental in the spec and support may vary between implementations; Flue does not restrict the session's toolset.     |
+
+Unknown frontmatter fields are ignored, so skills that carry extra host-specific fields still load. The spec's [`skills-ref` validator](https://github.com/agentskills/agentskills/tree/main/skills-ref) flags unknown fields if you want stricter authoring checks.
 
 ## Invoke a skill
 
