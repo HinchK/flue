@@ -78,7 +78,9 @@ Throws when the profile contains unknown fields, invalid capabilities, duplicate
 | `subagents`     | `AgentProfile[]`            | Named profiles available for delegated `session.task()` operations.                                                                                                         |
 | `thinkingLevel` | `ThinkingLevel`             | Default reasoning effort. Individual operations may override this value.                                                                                                    |
 | `compaction`    | `false \| CompactionConfig` | Automatic conversation-compaction configuration. `false` disables threshold compaction; overflow recovery and explicit `session.compact()` calls still compact when needed. |
-| `durability`    | `DurabilityConfig`          | Durability configuration for durable agent submissions. Controls recovery attempt limits and submission timeouts.                                                           |
+| `durability`    | `DurabilityConfig`          | Durability configuration for durable agent submissions. Controls recovery attempt limits and submission timeouts. Rejected on subagent profiles.                            |
+
+When a profile is selected as a subagent with `session.task()`, it is self-contained: `instructions`, `tools`, `skills`, and `subagents` apply only as declared on the profile (omitted means none), while `model`, `thinkingLevel`, and `compaction` inherit from the parent as defaults. See [Subagents](/docs/guide/subagents/#configuration-inheritance).
 
 #### `DurabilityConfig`
 

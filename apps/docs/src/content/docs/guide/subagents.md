@@ -38,6 +38,18 @@ An agent with configured subagents can decide to delegate while answering a prom
 
 The child session receives the delegated request and its own configured context, not the parent's existing conversation transcript. When persistence is configured, its retained history remains owned by the parent session rather than becoming an ordinary named session. See [Database](/docs/guide/database/) for persistence setup. When a subagent works in a configured sandbox, it uses that same sandbox boundary as its parent. See [Sandboxes](/docs/guide/sandboxes/) for controlling workspace and command access.
 
+## Configuration inheritance
+
+A subagent profile is self-contained. The capability fields that define what the subagent is and can do apply only when the profile declares them — omitting one means the subagent has none, never the parent's. Environment fields fall back to the parent's values as runtime defaults.
+
+| Field                                          | Behavior                                                                                                                                              |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `instructions`, `tools`, `skills`, `subagents` | Profile-owned. Only the profile's own declarations apply; an omitted field means none. The parent's values never flow into the delegated session.      |
+| `model`, `thinkingLevel`, `compaction`         | Inherits as a default. The profile's own value wins when declared; an omitted field uses the parent's value.                                           |
+| `durability`                                   | Rejected. Delegated task sessions run inside the parent operation, so declaring `durability` on a subagent profile is a definition-time error.         |
+
+A `task()` call without an `agent` name is not a subagent delegation: the child session reuses the parent's full configuration in a fresh context.
+
 ## Use subagents in workflows
 
 A workflow can choose delegation directly when application logic requires work from a particular subagent. Call `session.task(...)` with the name of a declared subagent, and provide `result` when the workflow needs validated data:
