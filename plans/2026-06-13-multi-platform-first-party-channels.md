@@ -5,6 +5,10 @@
 This plan starts from the implemented channel model recorded in
 `plans/2026-06-13-project-owned-channel-sdks-and-tools.md`.
 
+Implementation completed on 2026-06-13. All ten provider outcomes are
+implemented, validated on Node and workerd, and committed. Publication remains
+deferred as described below.
+
 The current branch already provides:
 
 - discovered `channels/<name>.ts` modules;
@@ -2661,3 +2665,97 @@ This plan is complete when:
 - deviations and unresolved consequential decisions are explicit;
 - repository-wide validation and focused review pass;
 - no live provider API or credential is required for automated validation.
+
+## Final cross-provider audit — 2026-06-13
+
+Status:
+
+- Complete
+
+Implemented outcomes:
+
+- GitHub, Slack, and Discord received focused audits and intentional ingress
+  expansion.
+- Microsoft Teams, Google Chat, Linear, Telegram, WhatsApp Business Cloud,
+  Twilio Messaging, and Facebook Messenger were added as first-party channel
+  packages.
+- Every provider has a named `flue add` recipe, buildable project example,
+  setup guide, API reference, Node protocol coverage, workerd coverage, and a
+  recorded clean-room reference audit.
+- Every canonical outbound project path executes in workerd. Node-oriented
+  provider SDKs were replaced with standards-based Fetch clients where needed.
+
+Fresh final validation:
+
+- `pnpm run check` passed across the 37-project workspace. All 55 test tasks
+  passed. Biome reported only existing advisory warnings outside this channel
+  work.
+- Forced package build, strict typecheck, Node protocol tests, and workerd
+  tests passed for all ten channel packages.
+- Forced example strict typecheck, Node build, local client tests, and
+  Cloudflare target builds passed for all ten examples.
+- `apps/docs` check and production build passed and rendered all channel guide
+  and API pages.
+- `apps/www` production build rendered all ten named connector routes.
+- `scripts/prepare-publish.mjs` completed successfully.
+- All ten channel packages packed successfully. Each tarball contained only
+  `dist`, generated docs, `LICENSE`, `README.md`, and `package.json`.
+- A clean strict TypeScript consumer installed all ten tarballs offline,
+  typechecked their public constructors and option types, and imported every
+  constructor at runtime.
+- The real built CLI printed all ten named recipes through a local registry
+  transport. The focused `flue add` suite passed 11 tests.
+- Frozen offline workspace installation, Knip, Biome, Prettier, whitespace
+  validation, stale-claim searches, and credential-pattern searches passed.
+  Credential scanning found only a documented private-key placeholder and the
+  generated synthetic Google test key.
+- No validation contacted a provider API.
+
+Focused review:
+
+- Reviewed discovery and mounting parity with agents, custom `flue()` prefixes,
+  route validation and method handling, optional surface publication, package
+  exports, response serialization, exact-body verification, identity checks,
+  body limits, deadlines, canonical conversation keys, capability isolation,
+  Cloudflare dependencies, recipes, docs, examples, and packed artifacts.
+- Corrected the main Channels guide after review found that Slack's implemented
+  optional `/commands` route was missing from the shared route table,
+  file-routing example, and optional-surface description.
+- Corrected Turbo cache inputs so `apps/www` connector output is invalidated
+  whenever top-level `connectors/**` changes.
+- No unresolved correctness or durability findings remain within this plan's
+  scope.
+
+Validation notes:
+
+- One parallel audit command allowed an example typecheck to race a package
+  build while that build replaced `dist`. The transient module-resolution
+  failure disappeared when the intended dependency order was restored; the
+  complete serial example pass succeeded.
+- Calling the unreleased CLI against the currently deployed public registry
+  correctly cannot retrieve branch-only recipes. The local-registry path and
+  website build pass. Deploying the updated registry site is a release
+  prerequisite, not an implementation defect.
+- Cloudflare builds continue to emit the repository's existing example warning
+  about missing Durable Object migrations. That deployment concern is broader
+  than channels and is recorded in the follow-up roadmap.
+
+Material deviations:
+
+- None from the final provider plan. Provider-level implementation deviations
+  and their primary-source reasoning remain recorded in each provider log.
+- The final audit added the `apps-www` Turbo input fix because connector
+  recipes are read from outside the app package and otherwise could be served
+  from a stale build cache.
+
+Remaining deferrals:
+
+- Package publication, versioning, registry-site deployment, and live
+  credential smoke tests require an explicit release operation.
+- Provider installation, OAuth, token rotation, multi-tenant credential
+  storage, webhook registration, and broad outbound API behavior remain
+  application or deployment concerns.
+- Long-lived transports such as Discord Gateway, Slack Socket Mode, and
+  Telegram polling remain outside first-party HTTP channels.
+- The prioritized continuation roadmap is
+  `plans/2026-06-13-channel-followups-roadmap.md`.
