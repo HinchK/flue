@@ -201,70 +201,14 @@ describe('flue()', () => {
 		expect(unknownResponse.status).toBe(404);
 	});
 
-	it('describes public agent workflow and workflow-run routes when the mounted app serves openapi.json', async () => {
-		configureFlueRuntime(nodeRuntime({
-			target: 'node',
-			runtimeVersion: '9.9.9',
-			agents: [agentRecord('assistant', { route: async (_c, next) => next() })],
-			workflows: [
-				workflowRecord(
-					'daily-report',
-					defineWorkflow({ agent: defineAgent(() => ({ model: false })), run: async () => undefined }),
-					{ route: async (_c, next) => next() },
-				),
-			],
-		}));
+	it('returns 404 when the removed public OpenAPI route is requested', async () => {
+		configureFlueRuntime(nodeRuntime({ target: 'node' }));
 		const app = new Hono();
 		app.route('/api', flue());
 
 		const response = await app.fetch(new Request('http://localhost/api/openapi.json'));
 
-		expect(response.status).toBe(200);
-		const body = (await response.json()) as {
-			info: { title: string; version: string };
-			paths: Record<string, Record<string, any>>;
-		};
-		expect(body.info).toMatchObject({ title: 'Flue Public API', version: '9.9.9' });
-		expect(Object.keys(body.paths)).toHaveLength(2);
-		expect(body.paths).toMatchObject({
-			'/workflows/{name}': { post: expect.any(Object) },
-			'/agents/{name}/{id}': { post: expect.any(Object) },
-		});
-		expect(Object.keys(body.paths['/workflows/{name}'] ?? {})).toEqual(['post']);
-		expect(Object.keys(body.paths['/agents/{name}/{id}'] ?? {})).toEqual(['post']);
-		// Both invocation routes document the same modes: 202 admission by
-		// default plus the ?wait=result synchronous mode.
-		for (const post of [
-			body.paths['/workflows/{name}']?.post,
-			body.paths['/agents/{name}/{id}']?.post,
-		]) {
-			expect(post['x-flue-invocation-modes']).toEqual(['accepted', 'wait-result']);
-			expect(Object.keys(post.responses)).toEqual(expect.arrayContaining(['200', '202']));
-			expect(post.parameters).toEqual(
-				expect.arrayContaining([expect.objectContaining({ name: 'wait', in: 'query' })]),
-			);
-		}
-		const schema =
-			body.paths['/agents/{name}/{id}']?.post?.requestBody?.content?.['application/json']?.schema;
-		expect(schema).toMatchObject({
-			type: 'object',
-			required: ['message'],
-			properties: {
-				message: { type: 'string' },
-				images: {
-					type: 'array',
-					items: {
-						type: 'object',
-						required: ['type', 'data', 'mimeType'],
-						properties: {
-							type: { const: 'image' },
-							data: { type: 'string', maxLength: MAX_IMAGE_DATA_LENGTH },
-							mimeType: { type: 'string' },
-						},
-					},
-				},
-			},
-		});
+		expect(response.status).toBe(404);
 	});
 
 	it('invokes an HTTP-exposed agent when the mounted app receives a valid agent POST', async () => {

@@ -1,13 +1,6 @@
-import { toJsonSchema } from '@valibot/to-json-schema';
 import type { Context, MiddlewareHandler } from 'hono';
 import { Hono } from 'hono';
-import {
-	type DescribeRouteOptions,
-	describeRoute,
-	openAPIRouteHandler,
-	resolver,
-	validator,
-} from 'hono-openapi';
+import { validator } from 'hono-openapi';
 import {
 	configureErrorRendering,
 	InvalidRequestError,
@@ -44,14 +37,8 @@ import type { RunStore, WorkflowRunPointer } from './run-store.ts';
 import type { RuntimeActivityGate } from './runtime-activity-gate.ts';
 
 import {
-	AgentAdmissionResponseSchema,
-	AgentInvocationResponseSchema,
 	AgentRouteParamSchema,
-	DirectAgentPayloadSchema,
-	ErrorEnvelopeSchema,
 	InvocationQuerySchema,
-	WorkflowAdmissionResponseSchema,
-	WorkflowInvocationResponseSchema,
 	WorkflowRouteParamSchema,
 } from './schemas.ts';
 
@@ -72,7 +59,6 @@ export interface WorkflowRecord {
 interface RuntimeBase {
 	devMode?: boolean;
 	temporaryLocalExposure?: boolean;
-	runtimeVersion?: string;
 	agents: AgentRecord[];
 	workflows: WorkflowRecord[];
 	channelHandlers?: Record<string, Record<string, (c: Context) => Response | Promise<Response>>>;
@@ -244,7 +230,6 @@ export function getFlueRuntime(): FlueRuntime | undefined {
  *
  * The mounted sub-app exposes:
  *
- * - `GET /openapi.json`
  * - `POST /agents/:name/:id` — send a prompt (202 admission; `?wait=result` for a sync JSON result)
  * - `GET/HEAD /agents/:name/:id` — DS event stream read
  * - `POST /workflows/:name` — start a workflow run (202 admission; `?wait=result` for a sync JSON result)
@@ -257,11 +242,8 @@ export function getFlueRuntime(): FlueRuntime | undefined {
 export function flue(): Hono {
 	const app = new Hono();
 
-	app.get('/openapi.json', lazyOpenApiRouteHandler(app, publicOpenApiOptions));
-
 	app.post(
 		'/workflows/:name',
-		describeRoute(workflowRouteSpec() as DescribeRouteOptions),
 		validated('param', WorkflowRouteParamSchema),
 		validated('query', InvocationQuerySchema),
 		workflowRouteHandler,
@@ -270,7 +252,6 @@ export function flue(): Hono {
 
 	app.post(
 		'/agents/:name/:id',
-		describeRoute(agentRouteSpec() as DescribeRouteOptions),
 		validated('param', AgentRouteParamSchema),
 		validated('query', InvocationQuerySchema),
 		agentRouteHandler,
@@ -313,19 +294,6 @@ export function createDefaultFlueApp(): Hono {
 	return app;
 }
 
-function publicOpenApiOptions() {
-	return {
-		documentation: {
-			info: {
-				title: 'Flue Public API',
-				version: runtimeConfig?.runtimeVersion ?? '0.0.0',
-				description: 'Public Flue agent invocation and workflow run inspection API.',
-			},
-			servers: [],
-		},
-	};
-}
-
 function validated(
 	target: 'param' | 'query',
 	schema: Parameters<typeof validator>[1],
@@ -360,96 +328,6 @@ function describeValidationIssues(issues: unknown): string {
 			return path ? `${path}: ${message}` : message;
 		})
 		.join(' ');
-}
-
-function jsonResponse(schema: Parameters<typeof resolver>[0], description: string) {
-	return {
-		description,
-		content: {
-			'application/json': {
-				schema: resolver(schema),
-			},
-		},
-	};
-}
-
-function errorResponses() {
-	return {
-		400: jsonResponse(ErrorEnvelopeSchema, 'Validation or request-shape error.'),
-		404: jsonResponse(ErrorEnvelopeSchema, 'Resource or route not found.'),
-		405: jsonResponse(ErrorEnvelopeSchema, 'HTTP method is not allowed.'),
-		415: jsonResponse(ErrorEnvelopeSchema, 'Request body must be JSON.'),
-		500: jsonResponse(ErrorEnvelopeSchema, 'Internal server error.'),
-		501: jsonResponse(ErrorEnvelopeSchema, 'Runtime feature is not configured.'),
-	};
-}
-
-function workflowRouteSpec() {
-	return {
-		tags: ['workflows'],
-		operationId: 'invokeWorkflow',
-		summary: 'Start a workflow run',
-		description:
-			'Starts the named HTTP-exposed workflow. By default returns an accepted run id (202); use ?wait=result for a synchronous JSON result. Observe run events via the Durable Streams GET endpoint at /runs/:runId.',
-		requestBody: {
-			required: false,
-			content: {
-				'application/json': {
-					schema: {
-						type: 'object',
-						additionalProperties: true,
-						description: 'Workflow-defined input. Consult the target workflow documentation.',
-					},
-				},
-			},
-		},
-		responses: {
-			202: jsonResponse(WorkflowAdmissionResponseSchema, 'Workflow run accepted.'),
-			200: {
-				description: 'Synchronous workflow result (?wait=result).',
-				content: {
-					'application/json': {
-						schema: resolver(WorkflowInvocationResponseSchema),
-					},
-				},
-			},
-			...errorResponses(),
-		},
-		'x-flue-invocation-modes': ['accepted', 'wait-result'],
-		'x-flue-user-defined': true,
-	};
-}
-
-function agentRouteSpec() {
-	return {
-		tags: ['agents'],
-		operationId: 'invokeAgent',
-		summary: 'Invoke an agent instance',
-		description:
-			'Prompts the named agent instance as an attached interaction. By default returns accepted stream coordinates (202); use ?wait=result for a synchronous JSON result. Observe events via the Durable Streams GET endpoint at the same URL. Use dispatch(...) from application code for asynchronous delivery.',
-		requestBody: {
-			required: true,
-			content: {
-				'application/json': {
-					schema: toJsonSchema(DirectAgentPayloadSchema, { errorMode: 'ignore' }),
-				},
-			},
-		},
-		responses: {
-			202: jsonResponse(AgentAdmissionResponseSchema, 'Prompt accepted.'),
-			200: {
-				description: 'Synchronous prompt result (?wait=result).',
-				content: {
-					'application/json': {
-						schema: resolver(AgentInvocationResponseSchema),
-					},
-				},
-			},
-			...errorResponses(),
-		},
-		'x-flue-invocation-modes': ['accepted', 'wait-result'],
-		'x-flue-user-defined': true,
-	};
 }
 
 const workflowRouteHandler: MiddlewareHandler = async (c) => {
@@ -738,13 +616,6 @@ export async function handleRunRouteRequest(opts: HandleRunRouteOptions): Promis
 		throw new RunNotFoundError({ runId: opts.runId });
 	}
 	return new Response(JSON.stringify(run), { headers: { 'content-type': 'application/json' } });
-}
-
-function lazyOpenApiRouteHandler(
-	app: Hono,
-	getOptions: () => ReturnType<typeof publicOpenApiOptions>,
-): MiddlewareHandler {
-	return (c, next) => openAPIRouteHandler(app, getOptions())(c, next);
 }
 
 /** Serve a DS stream HEAD/GET from the Node runtime's store. */

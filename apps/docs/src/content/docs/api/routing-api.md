@@ -43,7 +43,6 @@ Creates a mountable Hono sub-app for Flue's public HTTP API. Routes are relative
 
 | Route                    | Purpose                                                                                  |
 | ------------------------ | ---------------------------------------------------------------------------------------- |
-| `GET /openapi.json`      | Return the public OpenAPI document.                                                      |
 | `POST /agents/:name/:id` | Start a prompt on an HTTP-exposed agent instance; returns `202` with stream coordinates. |
 | `GET /agents/:name/:id`  | Stream agent events via the Durable Streams protocol.                                    |
 | `HEAD /agents/:name/:id` | Return agent stream metadata (tail offset, closed status).                               |
@@ -55,7 +54,7 @@ Creates a mountable Hono sub-app for Flue's public HTTP API. Routes are relative
 
 Agent routes and workflow invocation routes are available only when the corresponding module exports `route`. A workflow's existing run resources are available only when its module separately exports `runs`. Discovered channel files export a named `channel` binding whose provider-declared routes are always mounted beneath `/channels/<filename>`. Direct agent prompts and dispatched agent inputs are not runs.
 
-`POST /agents/:name/:id` accepts a JSON body of `{ message, images? }`: a required `message` string and an optional `images` array of `{ type: 'image', data, mimeType }` attachments, where `data` is base64-encoded image content (capped at 14 MiB of base64 characters per image) for vision-capable models. `POST /workflows/:name` accepts the workflow input as its JSON body. The exact request schemas are published at `GET /openapi.json`.
+`POST /agents/:name/:id` accepts a JSON body of `{ message, images? }`: a required `message` string and an optional `images` array of `{ type: 'image', data, mimeType }` attachments, where `data` is base64-encoded image content (capped at 14 MiB of base64 characters per image) for vision-capable models. `POST /workflows/:name` accepts the workflow input as its JSON body.
 
 `POST /agents/:name/:id` returns `202 { streamUrl, offset, submissionId }` after admission, or `200 { result, streamUrl, offset, submissionId }` with `?wait=result`; agent response headers and stream-coordinate behavior are unchanged. `POST /workflows/:name` returns `202 { runId }`, or `200 { runId, result }` with `?wait=result`. Workflow invocation responses do not include `Location` or `Stream-Next-Offset` headers. Any `?wait` value other than `result` is rejected with `400 invalid_request` on both routes.
 

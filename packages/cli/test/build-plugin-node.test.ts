@@ -149,7 +149,6 @@ function testBuildContext(overrides: Partial<BuildContext> = {}): BuildContext {
 		channels: [],
 		root: '/fixture',
 		output: '/fixture/dist',
-		runtimeVersion: '0.0.0-test',
 		...overrides,
 	};
 }

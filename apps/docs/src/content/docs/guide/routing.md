@@ -95,7 +95,7 @@ app.route('/api', flue());
 export default app;
 ```
 
-With this mount, an exposed `support-assistant` agent is available beneath `/api/agents/support-assistant/:id`, an exposed `summarize-ticket` workflow is available beneath `/api/workflows/summarize-ticket`, and `channels/github.ts` publishes its webhook beneath `/api/channels/github/webhook`. Optional workflow run resources and Flue's OpenAPI output use the same prefix. SDK consumers should include the mount pathname in `baseUrl`, such as `createFlueClient({ baseUrl: 'https://example.com/api' })`.
+With this mount, an exposed `support-assistant` agent is available beneath `/api/agents/support-assistant/:id`, an exposed `summarize-ticket` workflow is available beneath `/api/workflows/summarize-ticket`, and `channels/github.ts` publishes its webhook beneath `/api/channels/github/webhook`. Optional workflow run resources use the same prefix. SDK consumers should include the mount pathname in `baseUrl`, such as `createFlueClient({ baseUrl: 'https://example.com/api' })`.
 
 Apply application-wide middleware to the mounted paths you publish. Per-workflow `runs` middleware remains responsible for exposing and authorizing each run resource.
 

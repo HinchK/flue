@@ -269,7 +269,6 @@ export function createBuildContext(options: BuildOptions & { output: string }): 
 		appEntry: discoverOptionalEntry(sourceRoot, 'app'),
 		cloudflareEntry: discoverOptionalEntry(sourceRoot, 'cloudflare'),
 		dbEntry: discoverOptionalEntry(sourceRoot, 'db'),
-		runtimeVersion: readRuntimeVersion(root),
 		temporaryLocalExposure: options.temporaryLocalExposure === true,
 	};
 }
@@ -449,17 +448,6 @@ function collectNodePaths(root: string): Set<string> {
 		}
 	}
 	return nodePathsSet;
-}
-
-function readRuntimeVersion(root: string): string {
-	const runtimeDir = resolveRuntimeDir(root);
-	if (!runtimeDir) return '0.0.0';
-	try {
-		const pkg = JSON.parse(fs.readFileSync(path.join(runtimeDir, 'package.json'), 'utf-8'));
-		return typeof pkg.version === 'string' ? pkg.version : '0.0.0';
-	} catch {
-		return '0.0.0';
-	}
 }
 
 function getCLIDir(): string {

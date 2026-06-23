@@ -32,7 +32,6 @@ process.on('disconnect', () => { void stop(0); });
 
 	generateRuntimeEntryPoint(ctx: BuildContext, options: { deployment?: boolean } = {}): string {
 		const { agents, appEntry, channels, dbEntry, workflows } = ctx;
-		const runtimeVersion = JSON.stringify(ctx.runtimeVersion);
 		const temporaryLocalExposure = JSON.stringify(ctx.temporaryLocalExposure);
 
 		const agentImports = agents
@@ -266,7 +265,6 @@ configureFlueRuntime({
   target: 'node',
   devMode: isLocalMode,
   temporaryLocalExposure: ${temporaryLocalExposure},
-  runtimeVersion: ${runtimeVersion},
   agents,
   workflows,
   createAgentAdmission: (agentName, instanceId) =>

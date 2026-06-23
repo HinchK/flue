@@ -67,8 +67,6 @@ export interface BuildContext {
 	 * `db.ts` > `db.mts` > `db.js` > `db.mjs`.
 	 */
 	dbEntry?: string;
-	/** Version of @flue/runtime resolved for this build. */
-	runtimeVersion: string;
 	temporaryLocalExposure?: boolean;
 }
 

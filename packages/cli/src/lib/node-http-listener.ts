@@ -26,7 +26,6 @@ function isObservationRequest(request: Request): boolean {
 	if (request.method !== 'GET' && request.method !== 'HEAD') return false;
 	const pathname = new URL(request.url).pathname;
 	return (
-		pathname.endsWith('/openapi.json') ||
 		/\/(?:healthz?|readyz?|livez?)$/.test(pathname) ||
 		/\/(?:agents\/[^/]+\/[^/]+|runs\/[^/]+)$/.test(pathname)
 	);
