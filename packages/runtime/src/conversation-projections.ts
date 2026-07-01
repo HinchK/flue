@@ -32,8 +32,10 @@ type ConversationUiPart =
 	| { type: 'file'; mediaType: string; id?: string; size?: number; url?: string; filename?: string }
 	| ({ type: 'dynamic-tool'; toolName: string; toolCallId: string } & (
 			| { state: 'input-available'; input: unknown }
-			| { state: 'output-available'; input: unknown; output: unknown }
-			| { state: 'output-error'; input: unknown; errorText: string }
+			// `durationMs` is the tool-handler execution time; present once the
+			// outcome is known (absent on outcomes recorded before the field).
+			| { state: 'output-available'; input: unknown; output: unknown; durationMs?: number }
+			| { state: 'output-error'; input: unknown; errorText: string; durationMs?: number }
 	  ));
 
 /**
@@ -187,8 +189,8 @@ export function projectConversationUi(
 			if (!candidate || partIndex < 0) continue;
 			const part = candidate.parts[partIndex] as Extract<ConversationUiPart, { type: 'dynamic-tool' }>;
 			candidate.parts[partIndex] = toolResult.isError
-				? { type: 'dynamic-tool', toolName: part.toolName, toolCallId: part.toolCallId, state: 'output-error', input: part.input, errorText: toolResultText(toolResult.content) }
-				: { type: 'dynamic-tool', toolName: part.toolName, toolCallId: part.toolCallId, state: 'output-available', input: part.input, output: entry.toolOutput ? entry.toolOutput.value : toolResultOutput(toolResult.content) };
+				? { type: 'dynamic-tool', toolName: part.toolName, toolCallId: part.toolCallId, state: 'output-error', input: part.input, errorText: toolResultText(toolResult.content), ...(entry.toolDurationMs !== undefined ? { durationMs: entry.toolDurationMs } : {}) }
+				: { type: 'dynamic-tool', toolName: part.toolName, toolCallId: part.toolCallId, state: 'output-available', input: part.input, output: entry.toolOutput ? entry.toolOutput.value : toolResultOutput(toolResult.content), ...(entry.toolDurationMs !== undefined ? { durationMs: entry.toolDurationMs } : {}) };
 			break;
 		}
 	}

@@ -916,6 +916,9 @@ export class Session implements FlueSession, AgentSubmissionSession {
 					const details = result.details as { output?: unknown } | undefined;
 					const hasStructuredOutput =
 						!event.isError && typeof details === 'object' && details !== null && 'output' in details;
+					// Measure once and reuse for both the durable record and the
+					// ephemeral `tool` event so the two can never disagree.
+					const toolDurationMs = durationSince(call.startedAt);
 					await this.appendCanonical([{
 						...this.canonicalEnvelope('tool_outcome', `record_tool_outcome_${outcomeKey}`),
 						type: 'tool_outcome',
@@ -930,6 +933,7 @@ export class Session implements FlueSession, AgentSubmissionSession {
 							return { type: 'attachment' as const, attachment };
 						}),
 						...(hasStructuredOutput ? { output: details?.output } : {}),
+						durationMs: toolDurationMs,
 					}]);
 					if (!call.startEmitted) {
 						this.emit(
@@ -949,7 +953,7 @@ export class Session implements FlueSession, AgentSubmissionSession {
 								toolCallId: event.toolCallId,
 								isError: event.isError,
 								result: event.result,
-								durationMs: durationSince(call.startedAt),
+								durationMs: toolDurationMs,
 							},
 							{
 								...call.telemetry,

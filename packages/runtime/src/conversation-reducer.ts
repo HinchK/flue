@@ -41,6 +41,11 @@ export interface ReducedMessageEntry extends ReducedEntryBase {
 	 * model-facing `message` content. Present only when the tool declared one.
 	 */
 	toolOutput?: { value: unknown };
+	/**
+	 * Tool-handler execution time (ms) for tool-result entries, carried from the
+	 * durable tool outcome. Absent on entries whose outcome predates the field.
+	 */
+	toolDurationMs?: number;
 }
 
 export interface ReducedCompactionEntry extends ReducedEntryBase {
@@ -484,6 +489,7 @@ export function applyConversationRecord(
 					message: toolResultMessage(outcome),
 					attachmentRefs: attachmentRefs(outcome.content),
 					...(outcome.output !== undefined ? { toolOutput: { value: outcome.output } } : {}),
+					...(outcome.durationMs !== undefined ? { toolDurationMs: outcome.durationMs } : {}),
 				});
 				parentId = entryId;
 			}

@@ -34,9 +34,11 @@ export type FlueConversationPart =
 			filename?: string;
 	  }
 	| ({ type: 'dynamic-tool'; toolName: string; toolCallId: string } & (
-			| { state: 'input-available'; input: unknown; output?: never; errorText?: never }
-			| { state: 'output-available'; input: unknown; output: unknown; errorText?: never }
-			| { state: 'output-error'; input: unknown; output?: never; errorText: string }
+			| { state: 'input-available'; input: unknown; output?: never; errorText?: never; durationMs?: never }
+			// `durationMs` is the tool-handler execution time; present once the
+			// outcome is known (absent on outcomes recorded before the field).
+			| { state: 'output-available'; input: unknown; output: unknown; errorText?: never; durationMs?: number }
+			| { state: 'output-error'; input: unknown; output?: never; errorText: string; durationMs?: number }
 	  ));
 
 /**

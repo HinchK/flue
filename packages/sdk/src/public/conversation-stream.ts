@@ -66,8 +66,8 @@ export type ConversationStreamChunk =
 			input: unknown;
 			position: ConversationChunkPosition;
 	  }
-	| { type: 'tool-output'; conversationId: string; toolCallId: string; output: unknown; position: ConversationChunkPosition }
-	| { type: 'tool-output-error'; conversationId: string; toolCallId: string; errorText: string; position: ConversationChunkPosition }
+	| { type: 'tool-output'; conversationId: string; toolCallId: string; output: unknown; durationMs?: number; position: ConversationChunkPosition }
+	| { type: 'tool-output-error'; conversationId: string; toolCallId: string; errorText: string; durationMs?: number; position: ConversationChunkPosition }
 	| { type: 'message-completed'; conversationId: string; messageId: string; usage?: PromptUsage; position: ConversationChunkPosition }
 	| {
 			type: 'submission-settled';
@@ -187,6 +187,7 @@ export function applyConversationChunk(
 				state: 'output-available',
 				output: chunk.output,
 				errorText: undefined,
+				...(chunk.durationMs !== undefined ? { durationMs: chunk.durationMs } : {}),
 			}));
 		case 'tool-output-error':
 			return applyToolResult(state, chunk.toolCallId, (part) => ({
@@ -194,6 +195,7 @@ export function applyConversationChunk(
 				state: 'output-error',
 				output: undefined,
 				errorText: chunk.errorText,
+				...(chunk.durationMs !== undefined ? { durationMs: chunk.durationMs } : {}),
 			}));
 		case 'message-completed':
 			return completeMessage(state, chunk.messageId, chunk.usage);

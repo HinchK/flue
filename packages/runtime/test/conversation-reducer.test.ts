@@ -835,6 +835,76 @@ describe('reduceConversationRecords()', () => {
 		]);
 	});
 
+	it('projects durable tool-call duration onto the resolved dynamic-tool part', () => {
+		const records = canonicalConversation();
+		const state = reduceConversationRecords(createReducedInstanceState(), records.slice(0, 4), '4');
+		applyConversationRecord(state, {
+			...scope,
+			id: 'record_tool_call',
+			type: 'assistant_tool_call',
+			timestamp: '2026-06-25T00:00:02.150Z',
+			messageId: 'entry_assistant',
+			blockId: 'block_tool',
+			blockIndex: 1,
+			toolCallId: 'call_expected',
+			name: 'lookup',
+			arguments: {},
+		});
+		applyConversationRecord(state, {
+			...scope,
+			id: 'record_empty_text_complete',
+			type: 'assistant_text_completed',
+			timestamp: '2026-06-25T00:00:02.200Z',
+			messageId: 'entry_assistant',
+			blockId: 'block_text',
+			deltaCount: 0,
+		});
+		applyConversationRecord(state, {
+			...scope,
+			id: 'record_tool_assistant_complete',
+			type: 'assistant_message_completed',
+			timestamp: '2026-06-25T00:00:02.300Z',
+			messageId: 'entry_assistant',
+			stopReason: 'toolUse',
+			usage,
+		});
+		applyConversationRecord(state, {
+			...scope,
+			id: 'record_tool_outcome',
+			type: 'tool_outcome',
+			timestamp: '2026-06-25T00:00:02.400Z',
+			assistantMessageId: 'entry_assistant',
+			toolCallId: 'call_expected',
+			toolName: 'lookup',
+			isError: false,
+			content: [{ type: 'text', text: 'durable result' }],
+			durationMs: 42,
+		});
+		applyConversationRecord(state, {
+			...scope,
+			id: 'record_tool_commit',
+			type: 'tool_results_committed',
+			timestamp: '2026-06-25T00:00:02.500Z',
+			assistantMessageId: 'entry_assistant',
+			parentId: 'entry_assistant',
+			outcomeIds: ['record_tool_outcome'],
+		});
+		const conversation = required(state.conversations.get('conv_01'));
+
+		const toolPart = projectConversationUi(conversation, '6')
+			.messages.flatMap((message) => message.parts)
+			.find((part) => part.type === 'dynamic-tool' && part.toolCallId === 'call_expected');
+		expect(toolPart).toEqual({
+			type: 'dynamic-tool',
+			toolName: 'lookup',
+			toolCallId: 'call_expected',
+			state: 'output-available',
+			input: {},
+			output: 'durable result',
+			durationMs: 42,
+		});
+	});
+
 	it('rejects a tool-results commit that does not match the requested tool call', () => {
 		const records = canonicalConversation();
 		const state = reduceConversationRecords(createReducedInstanceState(), records.slice(0, 4), '4');

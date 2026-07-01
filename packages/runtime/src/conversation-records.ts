@@ -186,6 +186,13 @@ interface ToolOutcomeRecord extends ConversationRecordEnvelope {
 	 * serialized model-facing text. Absent for tools without structured output.
 	 */
 	output?: unknown;
+	/**
+	 * Tool-handler execution time in milliseconds, measured from execution start
+	 * to end. Durably records the same duration otherwise only carried on the
+	 * ephemeral `tool` event. Absent on records written before this field
+	 * existed.
+	 */
+	durationMs?: number;
 }
 
 interface ToolResultsCommittedRecord extends ConversationRecordEnvelope {

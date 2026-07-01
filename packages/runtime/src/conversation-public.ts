@@ -67,8 +67,8 @@ type ConversationStreamChunkBody =
 			toolName: string;
 			input: unknown;
 	  }
-	| { type: 'tool-output'; conversationId: string; toolCallId: string; output: unknown }
-	| { type: 'tool-output-error'; conversationId: string; toolCallId: string; errorText: string }
+	| { type: 'tool-output'; conversationId: string; toolCallId: string; output: unknown; durationMs?: number }
+	| { type: 'tool-output-error'; conversationId: string; toolCallId: string; errorText: string; durationMs?: number }
 	| { type: 'message-completed'; conversationId: string; messageId: string; usage?: PromptUsage }
 	| {
 			type: 'submission-settled';
@@ -304,13 +304,14 @@ function encodeToolOutcome(
 		return [];
 	}
 	return outcome.isError
-		? [{ type: 'tool-output-error', conversationId, toolCallId: outcome.toolCallId, errorText: toolResultText(outcome.content) }]
+		? [{ type: 'tool-output-error', conversationId, toolCallId: outcome.toolCallId, errorText: toolResultText(outcome.content), ...(outcome.durationMs !== undefined ? { durationMs: outcome.durationMs } : {}) }]
 		: [
 				{
 					type: 'tool-output',
 					conversationId,
 					toolCallId: outcome.toolCallId,
 					output: outcome.output !== undefined ? outcome.output : toolResultOutput(outcome.content),
+					...(outcome.durationMs !== undefined ? { durationMs: outcome.durationMs } : {}),
 				},
 			];
 }
