@@ -15,15 +15,11 @@
  * SQLite and Postgres, and `@flue/postgres` implements the store contract
  * directly on purpose. Cross-backend parity is enforced by the documented
  * invariants on the store interfaces and the contract suites in
- * `@flue/runtime/test-utils`, not by code sharing.
+ * `@flue/runtime/test-utils` — the only shared code is the storage-agnostic
+ * admission algorithm (`admitSubmissionWithBackend`) in adapter-helpers.
  */
 
-import {
-	isSubmissionPayload,
-	parseAcceptedAt,
-	SUBMISSION_HARNESS_NAME,
-	SUBMISSION_SESSION_NAME,
-} from './adapter-helpers.ts';
+import { admitSubmissionWithBackend, isSubmissionPayload } from './adapter-helpers.ts';
 import type {
 	AgentAttemptMarker,
 	AgentDispatchAdmission,
@@ -46,19 +42,14 @@ type SqlRow = Record<string, unknown>;
 
 import {
 	hydratePersistedSubmissionAttachments,
-	matchesPersistedSubmissionAttachments,
-	prepareSubmissionAttachments,
-	samePersistedChunks,
 	submissionChunkOwner,
 } from './persisted-image-placement.ts';
 import {
 	type AgentSubmissionInput,
 	createDispatchAgentSubmissionInput,
-	type DirectAgentSubmissionInput,
 } from './runtime/agent-submissions.ts';
 import type { DispatchInput } from './runtime/dispatch-queue.ts';
 import { migrateFlueSqlSchema } from './schema-version.ts';
-import { createSessionStorageKey } from './session-identity.ts';
 import {
 	createSqlPersistedChunkStore,
 	ensureSqlPersistedChunkTable,
@@ -145,7 +136,7 @@ class AgentSubmissionStoreImpl implements AgentSubmissionStore {
 		return this.admitSubmission(createDispatchAgentSubmissionInput(input));
 	}
 
-	async admitDirect(input: DirectAgentSubmissionInput): Promise<AgentSubmission> {
+	async admitDirect(input: AgentSubmissionInput): Promise<AgentSubmission> {
 		const admission = this.admitSubmission(input);
 		if (admission.kind !== 'submission') {
 			throw new Error('[flue] Internal direct admission returned an unexpected result.');
@@ -489,55 +480,33 @@ class AgentSubmissionStoreImpl implements AgentSubmissionStore {
 	}
 
 	private admitSubmission(input: AgentSubmissionInput): AgentDispatchAdmission {
-		const { kind, submissionId } = input;
-		const prepared = prepareSubmissionAttachments(input);
-		const payload = JSON.stringify(prepared.value);
-		const acceptedAt = parseAcceptedAt(input.acceptedAt, `${kind} admission`);
-		const sessionKey = createSessionStorageKey(
-			input.id,
-			SUBMISSION_HARNESS_NAME,
-			SUBMISSION_SESSION_NAME,
-		);
 		return this.transactionSync(() => {
 			const chunkStore = createSqlPersistedChunkStore(this.sql);
-			if (kind === 'dispatch') {
-				const receipt = this.getDispatchReceipt(submissionId);
-				if (receipt) return { kind: 'retained_receipt', receipt };
+			const admission = admitSubmissionWithBackend<SqlRow>(input, {
+				getDispatchReceipt: (submissionId) => this.getDispatchReceipt(submissionId),
+				insertIfAbsent: (row) => {
+					this.sql.exec(
+						`INSERT OR IGNORE INTO flue_agent_submissions
+						 (submission_id, session_key, kind, payload, status, accepted_at)
+						 VALUES (?, ?, ?, ?, 'queued', ?)`,
+						row.submissionId,
+						row.sessionKey,
+						row.kind,
+						row.payload,
+						row.acceptedAt,
+					);
+				},
+				getExisting: (submissionId) => this.readSubmissionRow(submissionId),
+				readChunks: (owner) => chunkStore.read(owner),
+				replaceChunks: (owner, chunks) => chunkStore.replace(owner, chunks),
+				parseSubmission,
+			});
+			// Unreachable: every backend callback above is synchronous, so the
+			// shared algorithm completes inside `transactionSync`.
+			if (admission instanceof Promise) {
+				throw new Error('[flue] Internal SQLite admission backend must be synchronous.');
 			}
-			this.sql.exec(
-				`INSERT OR IGNORE INTO flue_agent_submissions
-				 (submission_id, session_key, kind, payload, status, accepted_at)
-				 VALUES (?, ?, ?, ?, 'queued', ?)`,
-				submissionId,
-				sessionKey,
-				kind,
-				payload,
-				acceptedAt,
-			);
-			const row = this.readSubmissionRow(submissionId);
-			if (!row)
-				throw new Error(`[flue] Durable ${kind} admission did not create a submission row.`);
-			if (row.kind !== kind) return { kind: 'conflict' };
-			const owner = submissionChunkOwner(submissionId);
-			if (row.payload !== payload) {
-				if (
-					typeof row.payload !== 'string' ||
-					!matchesPersistedSubmissionAttachments(
-						input,
-						JSON.parse(row.payload) as AgentSubmissionInput,
-						chunkStore.read(owner),
-					)
-				)
-					return { kind: 'conflict' };
-				return { kind: 'submission', submission: this.parseSubmission(row) };
-			}
-			const persistedChunks = chunkStore.read(owner);
-			if (persistedChunks.length === 0 && prepared.chunks.length > 0) {
-				chunkStore.replace(owner, prepared.chunks);
-			} else if (!samePersistedChunks(persistedChunks, prepared.chunks)) {
-				return { kind: 'conflict' };
-			}
-			return { kind: 'submission', submission: this.parseSubmission(row) };
+			return admission;
 		});
 	}
 

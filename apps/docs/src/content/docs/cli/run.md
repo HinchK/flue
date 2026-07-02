@@ -29,13 +29,13 @@ An absolute `--server` always requires `agent:<name>` or `workflow:<name>` becau
 
 ## Input and identity
 
-Agent `--input` is required and uses the public prompt body:
+Agent `--input` is required and takes a `message` string, delivered as a `kind: 'user'` message:
 
 ```json
 { "message": "Summarize the open issues." }
 ```
 
-It may also include the public `images` field. `--id` selects the persistent agent-instance ID. If omitted, Flue generates and displays a bare ULID. Reusing an ID resumes persisted state only when the configured persistence adapter survives the temporary process.
+It may also include an `images` field of `{ type: "image", data, mimeType }` attachments. `--id` selects the persistent agent-instance ID. If omitted, Flue generates and displays a bare ULID. Reusing an ID resumes persisted state only when the configured persistence adapter survives the temporary process.
 
 Workflow `--input` is parsed as JSON and passed unchanged. It may be omitted when the workflow accepts omitted input. Workflow `--id` is not supported; workflows use their generated run IDs.
 
@@ -62,7 +62,7 @@ For repeated header names, the final value wins case-insensitively.
 
 | Option            | Default                                                    | Description                                                                                                                         |
 | ----------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `--target <name>` | Configuration value                                        | Select `node` or `cloudflare` for a temporary local runtime.                                                                         |
+| `--target <name>` | Configuration value                                        | Select `node` or `cloudflare` for a temporary local runtime.                                                                        |
 | `--root <path>`   | Selected config-file directory, or config search directory | Select the project root.                                                                                                            |
 | `--output <path>` | `<root>/dist`                                              | Configure deployment build output. Temporary Node execution does not write runtime artifacts there.                                 |
 | `--config <path>` | Auto-discovered `flue.config.*`                            | Select a configuration file.                                                                                                        |

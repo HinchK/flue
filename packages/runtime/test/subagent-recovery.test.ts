@@ -158,11 +158,11 @@ describe('subagent task recovery', () => {
 		const harness2 = await makeHarness(provider, writer, attachments, agent);
 		const internal2 = getInternalSession(await harness2.session());
 		if (!internal2) throw new Error('Expected internal session after restart.');
-		const recovered = await internal2.processSubmissionInput(
+		await internal2.processSubmissionInput(
 			directInput('submission-parent', 'Delegate.'),
 		);
 
-		expect(recovered.text).toBe('Parent done with the delegated result.');
+		expect(assistantText(await writer.getConversation(parentConversationId))).toContain('Parent done with the delegated result.');
 
 		const parent = await writer.getConversation(parentConversationId);
 		const resolved = taskOutcomes(parent);
@@ -215,11 +215,11 @@ describe('subagent task recovery', () => {
 		const harness2 = await makeHarness(provider, writer, attachments, agent);
 		const internal2 = getInternalSession(await harness2.session());
 		if (!internal2) throw new Error('Expected internal session after restart.');
-		const recovered = await internal2.processSubmissionInput(
+		await internal2.processSubmissionInput(
 			directInput('submission-parent', 'Delegate.'),
 		);
 
-		expect(recovered.text).toBe('Parent done with both.');
+		expect(assistantText(await writer.getConversation(parentConversationId))).toContain('Parent done with both.');
 		const resolved = taskOutcomes(await writer.getConversation(parentConversationId));
 		expect(resolved).toHaveLength(2);
 		expect(resolved.every((outcome) => !outcome.isError)).toBe(true);
@@ -262,11 +262,11 @@ describe('subagent task recovery', () => {
 		const harness2 = await makeHarness(provider, writer, attachments, agent);
 		const internal2 = getInternalSession(await harness2.session());
 		if (!internal2) throw new Error('Expected internal session after restart.');
-		const recovered = await internal2.processSubmissionInput(
+		await internal2.processSubmissionInput(
 			directInput('submission-parent', 'Delegate.'),
 		);
 
-		expect(recovered.text).toBe('Parent done.');
+		expect(assistantText(await writer.getConversation(parentConversationId))).toContain('Parent done.');
 		const parent = await writer.getConversation(parentConversationId);
 		expect(taskOutcomes(parent)[0]?.content).toEqual([{ type: 'text', text: 'Child done.' }]);
 	});
@@ -302,11 +302,11 @@ describe('subagent task recovery', () => {
 		const harness2 = await makeHarness(provider, writer, attachments, withoutSubagent);
 		const internal2 = getInternalSession(await harness2.session());
 		if (!internal2) throw new Error('Expected internal session after restart.');
-		const recovered = await internal2.processSubmissionInput(
+		await internal2.processSubmissionInput(
 			directInput('submission-parent', 'Delegate.'),
 		);
 
-		expect(recovered.text).toBe('Parent continued despite the missing subagent.');
+		expect(assistantText(await writer.getConversation(parentConversationId))).toContain('Parent continued despite the missing subagent.');
 		const resolved = taskOutcomes(await writer.getConversation(parentConversationId));
 		expect(resolved[0]?.isError).toBe(true);
 		expect(JSON.parse((resolved[0]?.content[0] as { text: string }).text)).toMatchObject({
@@ -363,11 +363,11 @@ describe('subagent task recovery', () => {
 		const harness3 = await makeHarness(provider, writer, attachments, agent);
 		const internal3 = getInternalSession(await harness3.session());
 		if (!internal3) throw new Error('Expected internal session.');
-		const recovered = await internal3.processSubmissionInput(
+		await internal3.processSubmissionInput(
 			directInput('submission-parent', 'Delegate.'),
 		);
 
-		expect(recovered.text).toBe('Parent done.');
+		expect(assistantText(await writer.getConversation(parentConversationId))).toContain('Parent done.');
 		const parent = await writer.getConversation(parentConversationId);
 		// Same child throughout — no duplicate child conversation was created.
 		expect([...(parent?.childConversations.values() ?? [])]).toHaveLength(childCountAfterPhase1);

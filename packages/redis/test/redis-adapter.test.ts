@@ -212,6 +212,36 @@ describeRedis('redis() concurrency', () => {
 	});
 });
 
+describeRedis('redis() malformed rows', () => {
+	// Many sequential round trips (two admissions plus per-id list reads), so
+	// allow for high-latency Redis servers.
+	it(
+		'settles a malformed submission row instead of wedging list calls',
+		{ timeout: 60_000 },
+		async () => {
+			const stores = await createHarness();
+			const submissions = stores.executionStore.submissions;
+			await submissions.admitDispatch(dispatchInput('malformed'));
+			await submissions.markSubmissionCanonicalReady('malformed');
+			await submissions.admitDispatch({ ...dispatchInput('healthy'), id: 'agent-2' });
+			await submissions.markSubmissionCanonicalReady('healthy');
+			if (!harness) throw new TypeError('Harness is required.');
+			const malformedKey = `${harness.prefix}:submission:${Buffer.from('malformed').toString('base64url')}`;
+			// Corrupt persisted metadata so the row no longer matches its payload.
+			await harness.client.hSet(malformedKey, 'acceptedAt', '1');
+			const runnable = await submissions.listRunnableSubmissions();
+			expect(runnable.map((item) => item.submissionId)).toEqual(['healthy']);
+			expect(await harness.client.hGet(malformedKey, 'status')).toBe('settled');
+			expect(await harness.client.hGet(malformedKey, 'error')).toContain('malformed');
+			// A later pass must not resurrect or re-report the settled row.
+			expect(
+				(await submissions.listRunnableSubmissions()).map((item) => item.submissionId),
+			).toEqual(['healthy']);
+			await cleanupHarness();
+		},
+	);
+});
+
 describeRedis('redis() migration', () => {
 	it('rejects unversioned Flue persistence without stamping it', async () => {
 		if (!redisUrl) throw new TypeError('TEST_REDIS_URL is required.');

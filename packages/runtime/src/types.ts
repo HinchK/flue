@@ -46,16 +46,22 @@ export type DeliveredAttachment = PromptImage & { filename?: string };
 
 /**
  * A message delivered into an agent's session — the single unified input
- * shape for both `dispatch()` and a direct HTTP prompt.
+ * shape for both `dispatch()` and a direct HTTP prompt (whose wire body is
+ * this shape verbatim).
  *
- * `kind: 'user'` is a real, user-attributed chat turn: it produces a
+ * `kind: 'user'` is a direct user talking to the assistant: it produces a
  * canonical `user_message` record and projects with `purpose: 'user'` in
- * the conversation (see #404's message classification). Use it for
- * human-authored messages, optionally carrying attachments.
+ * the conversation (see #404's message classification). Use it for a 1:1
+ * chat surface addressing the agent directly, optionally carrying
+ * attachments.
  *
- * `kind: 'signal'` is internal/control activity, not primary chat: it
- * produces a canonical `signal` record. Use it for structured events —
- * webhooks, schedules, and other non-chat deliveries. `body` is a plain
+ * `kind: 'signal'` models everything beyond that direct exchange and is the
+ * right shape for most (if not all) channels: a Slack thread or GitHub issue
+ * is a multi-user conversation the agent participates in as one member, and
+ * signals model each participant's activity — sender identity and other
+ * structured metadata in `attributes`, the message itself in `body` — where
+ * a `user` message would conflate other participants with the assistant's
+ * own user. It produces a canonical `signal` record. `body` is a plain
  * string today; JSON-stringify structured payloads yourself. (`body`, not
  * `text`/`content`, is named for headroom — a future phase may accept a real
  * JSON value and stringify it internally without a field rename.)
@@ -91,18 +97,6 @@ export interface DispatchReceipt {
 	dispatchId: string;
 	/** ISO timestamp assigned when dispatch admission begins. */
 	acceptedAt: string;
-}
-
-/**
- * One image in a direct (HTTP) agent submission. Extends pi-ai's `ImageContent`
- * with an optional uploader-provided `filename` (carried on the wire and the
- * canonical record, but not part of pi-ai's model image shape).
- */
-type DirectAgentImage = PromptImage & { filename?: string };
-
-export interface DirectAgentPayload {
-	message: string;
-	images?: DirectAgentImage[];
 }
 
 /** Context passed to a {@link defineAgent} initializer. */

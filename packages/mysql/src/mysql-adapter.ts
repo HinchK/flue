@@ -5,8 +5,7 @@ import type {
 	AgentSubmission,
 	AgentSubmissionStore,
 	CreateRunInput,
-	DirectAgentSubmissionInput,
-	DispatchAgentSubmissionInput,
+	AgentSubmissionInput,
 	DispatchInput,
 	EndRunInput,
 	EventStreamMeta,
@@ -26,6 +25,7 @@ import type {
 	SubmissionClaimRef,
 } from '@flue/runtime/adapter';
 import {
+	admitSubmissionWithBackend,
 	assertSupportedFlueSchemaVersion,
 	clampLimit,
 	createDispatchAgentSubmissionInput,
@@ -43,13 +43,9 @@ import {
 	LEASE_DURATION_MS,
 	MAX_LIST_LIMIT,
 	MAX_READ_LIMIT,
-	matchesPersistedSubmissionAttachments,
-	parseAcceptedAt,
 	parseOffset,
-	prepareSubmissionAttachments,
 	SUBMISSION_HARNESS_NAME,
 	SUBMISSION_SESSION_NAME,
-	samePersistedChunks,
 	submissionChunkOwner,
 } from '@flue/runtime/adapter';
 import { MysqlAttachmentStore } from './mysql-attachment-store.ts';
@@ -715,7 +711,7 @@ class MysqlSubmissionStore implements AgentSubmissionStore {
 		return this.admitSubmission(createDispatchAgentSubmissionInput(input));
 	}
 
-	async admitDirect(input: DirectAgentSubmissionInput): Promise<AgentSubmission> {
+	async admitDirect(input: AgentSubmissionInput): Promise<AgentSubmission> {
 		const admission = await this.admitSubmission(input);
 		if (admission.kind !== 'submission') {
 			throw new Error('[flue] Internal direct admission returned an unexpected result.');
@@ -931,13 +927,10 @@ class MysqlSubmissionStore implements AgentSubmissionStore {
 		});
 	}
 
-	private async admitSubmission(
-		input: DispatchAgentSubmissionInput | DirectAgentSubmissionInput,
-	): Promise<AgentDispatchAdmission> {
-		const { kind, submissionId } = input;
-		const prepared = prepareSubmissionAttachments(input);
-		const payload = JSON.stringify(prepared.value);
-		const acceptedAt = parseAcceptedAt(input.acceptedAt, `${kind} admission`);
+	private async admitSubmission(input: AgentSubmissionInput): Promise<AgentDispatchAdmission> {
+		// MySQL has no INSERT ... ON CONFLICT read-back guarantee under
+		// concurrent admissions, so serialize per-session via the lock table
+		// before running the shared admission algorithm.
 		const sessionKey = createSessionStorageKey(
 			input.id,
 			SUBMISSION_HARNESS_NAME,
@@ -947,52 +940,33 @@ class MysqlSubmissionStore implements AgentSubmissionStore {
 		return this.runner.transaction(async (tx) => {
 			await lockSession(tx, sessionKey);
 			const chunkStore = createMysqlChunkStore(tx);
-			if (kind === 'dispatch') {
-				const receiptRows = await tx.query(
-					'SELECT dispatch_id, accepted_at FROM flue_agent_dispatch_receipts WHERE dispatch_id = ? LIMIT 1',
-					[submissionId],
-				);
-				if (receiptRows[0]) {
-					const receipt = parseDispatchReceipt(receiptRows[0]);
-					return { kind: 'retained_receipt' as const, receipt };
-				}
-			}
-			await tx.query(
-				`INSERT IGNORE INTO flue_agent_submissions
-				 (submission_id, session_key, kind, payload, status, accepted_at)
-				 VALUES (?, ?, ?, ?, 'queued', ?)`,
-				[submissionId, sessionKey, kind, payload, acceptedAt],
-			);
-
-			const readRows = await tx.query(
-				`SELECT ${submissionColumns} FROM flue_agent_submissions WHERE submission_id = ? LIMIT 1`,
-				[submissionId],
-			);
-			const row = readRows[0];
-			if (!row)
-				throw new Error(`[flue] Durable ${kind} admission did not create a submission row.`);
-			if (row.kind !== kind) return { kind: 'conflict' as const };
-			const owner = submissionChunkOwner(submissionId);
-			if (row.payload !== payload) {
-				const persistedChunks = await chunkStore.read(owner);
-				if (
-					typeof row.payload !== 'string' ||
-					!matchesPersistedSubmissionAttachments(
-						input,
-						JSON.parse(row.payload) as DirectAgentSubmissionInput | DispatchAgentSubmissionInput,
-						persistedChunks,
-					)
-				)
-					return { kind: 'conflict' as const };
-				return { kind: 'submission' as const, submission: parseSubmission(row, persistedChunks) };
-			}
-			const persistedChunks = await chunkStore.read(owner);
-			if (persistedChunks.length === 0 && prepared.chunks.length > 0) {
-				await chunkStore.replace(owner, prepared.chunks);
-			} else if (!samePersistedChunks(persistedChunks, prepared.chunks)) {
-				return { kind: 'conflict' as const };
-			}
-			return { kind: 'submission' as const, submission: parseSubmission(row, prepared.chunks) };
+			return admitSubmissionWithBackend<SqlRow>(input, {
+				getDispatchReceipt: async (submissionId) => {
+					const receiptRows = await tx.query(
+						'SELECT dispatch_id, accepted_at FROM flue_agent_dispatch_receipts WHERE dispatch_id = ? LIMIT 1',
+						[submissionId],
+					);
+					return receiptRows[0] ? parseDispatchReceipt(receiptRows[0]) : null;
+				},
+				insertIfAbsent: async (row) => {
+					await tx.query(
+						`INSERT IGNORE INTO flue_agent_submissions
+						 (submission_id, session_key, kind, payload, status, accepted_at)
+						 VALUES (?, ?, ?, ?, 'queued', ?)`,
+						[row.submissionId, row.sessionKey, row.kind, row.payload, row.acceptedAt],
+					);
+				},
+				getExisting: async (submissionId) =>
+					(
+						await tx.query(
+							`SELECT ${submissionColumns} FROM flue_agent_submissions WHERE submission_id = ? LIMIT 1`,
+							[submissionId],
+						)
+					)[0],
+				readChunks: (owner) => chunkStore.read(owner),
+				replaceChunks: (owner, chunks) => chunkStore.replace(owner, chunks),
+				parseSubmission,
+			});
 		});
 	}
 
@@ -1086,7 +1060,7 @@ function parseSubmission(row: SqlRow, chunks: readonly PersistedChunkRow[]): Age
 		throw new Error('[flue] Persisted agent submission row is malformed.');
 	}
 
-	const parsedInput = JSON.parse(row.payload) as DirectAgentSubmissionInput | DispatchAgentSubmissionInput;
+	const parsedInput = JSON.parse(row.payload) as AgentSubmissionInput;
 	const input = hydratePersistedSubmissionAttachments(parsedInput, chunks);
 	if (
 		!isSubmissionPayload(input, {

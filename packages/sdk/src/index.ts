@@ -42,9 +42,10 @@ export type {
 // `FlueConversationState` via `observe()` rather than handling chunks.
 export type { ConversationStreamChunk } from './public/conversation-stream.ts';
 export type {
-	AgentPromptImage,
 	AgentPromptOptions,
 	AgentSendResult,
+	DeliveredAttachment,
+	DeliveredMessage,
 } from './public/invoke.ts';
 export {
 	type AgentWaitOptions,

@@ -31,7 +31,7 @@ export interface WorkflowRunResult<TResult = unknown> {
 }
 
 export type FlueExecutionTarget = 'agent_submission' | 'workflow_run';
-export type FlueExecutionFailure = 'failed' | 'terminal_event_missing';
+export type FlueExecutionFailure = 'failed' | 'aborted' | 'terminal_event_missing';
 
 export class FlueExecutionError extends Error {
 	readonly target: FlueExecutionTarget;
@@ -80,7 +80,7 @@ export async function waitForAgentSubmission(
 		throw new FlueExecutionError({
 			target: 'agent_submission',
 			targetId: admission.submissionId,
-			failure: 'failed',
+			failure: chunk.outcome === 'aborted' ? 'aborted' : 'failed',
 			error: chunk.error,
 		});
 	}
@@ -163,7 +163,8 @@ function executionErrorMessage(options: {
 		return `${target} ${options.targetId} ended without a terminal event`;
 	}
 	const message = errorMessage(options.error);
-	return `${target} ${options.targetId} failed${message ? `: ${message}` : ''}`;
+	const verb = options.failure === 'aborted' ? 'was aborted' : 'failed';
+	return `${target} ${options.targetId} ${verb}${message ? `: ${message}` : ''}`;
 }
 
 function errorMessage(error: unknown): string | undefined {

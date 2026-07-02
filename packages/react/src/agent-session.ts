@@ -1,6 +1,6 @@
 import type {
 	AgentConversationObservation,
-	AgentPromptImage,
+	DeliveredAttachment,
 	ConversationLiveMode,
 	FlueClient,
 } from '@flue/sdk';
@@ -13,7 +13,7 @@ import {
 } from './agent-reducer.ts';
 
 export interface SendMessageOptions {
-	images?: AgentPromptImage[];
+	images?: DeliveredAttachment[];
 }
 
 export class AgentSession {
@@ -63,8 +63,11 @@ export class AgentSession {
 		this.dispatch({ type: 'local_send_submitted', localId, message, images: options.images });
 		try {
 			const receipt = await this.client.agents.send(this.name, this.id, {
-				message,
-				images: options.images,
+				message: {
+					kind: 'user',
+					body: message,
+					...(options.images?.length ? { attachments: options.images } : {}),
+				},
 			});
 			this.dispatch({ type: 'local_send_admitted', localId, submissionId: receipt.submissionId });
 			if (this.observation?.getSnapshot().phase === 'absent') this.observation.refresh();

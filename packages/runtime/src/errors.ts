@@ -586,8 +586,9 @@ export class SandboxOperationUnsupportedError extends FlueError {
 // `shell()` / `compact()`. Programmatic consumers (the primary
 // audience of these calls) distinguish failures with `instanceof` against the
 // classes re-exported from the package root. When one of these escapes to the
-// HTTP layer (e.g. a `?wait=result` prompt), `toHttpResponse` renders its
-// typed envelope with status 500 instead of an opaque `internal_error`.
+// HTTP layer (e.g. a synchronous `?wait=result` workflow invocation),
+// `toHttpResponse` renders its typed envelope with status 500 instead of an
+// opaque `internal_error`.
 //
 // Aborted operations are NOT part of this vocabulary — they reject with a
 // standard `AbortError` (`DOMException`); see `abort.ts`.
@@ -1011,20 +1012,16 @@ export class OperationFailedError extends FlueError {
  * - `'before_input_marker'` — interrupted with inconsistent pre-marker state
  *   that canonical replay could not safely repair.
  * - `'after_input_application'` — interrupted after input application
- *   without a completed response that recovery could safely resume. When the
- *   interruption left tool calls whose outcomes could not be confirmed,
- *   `meta.interruptedTools` lists them; an unresolved tool call is never
- *   assumed to have completed and is never retried automatically.
+ *   without a completed response that recovery could safely resume. An
+ *   unresolved tool call is never assumed to have completed and is never
+ *   retried automatically.
  */
 export class SubmissionInterruptedError extends FlueError {
 	constructor(
 		input:
 			| { phase: 'retry_exhausted_before_input'; attemptCount: number; maxAttempts: number }
 			| { phase: 'before_input_marker' }
-			| {
-					phase: 'after_input_application';
-					interruptedTools?: ReadonlyArray<{ readonly name: string; readonly id: string }>;
-			  },
+			| { phase: 'after_input_application' },
 	) {
 		if (input.phase === 'retry_exhausted_before_input') {
 			super({
@@ -1055,23 +1052,16 @@ export class SubmissionInterruptedError extends FlueError {
 				meta: { phase: input.phase },
 			});
 		} else {
-			const toolNames = input.interruptedTools?.map((tool) => tool.name) ?? [];
 			super({
 				type: 'submission_interrupted',
 				message:
-					toolNames.length > 0
-						? `Submission was interrupted with pending tool call(s): ${toolNames.join(', ')}. ` +
-							'The tool outcome could not be confirmed and the tool was not automatically retried.'
-						: 'Submission was interrupted after input application without a completed response. ' +
-							'The work was not automatically replayed.',
+					'Submission was interrupted after input application without a completed response. ' +
+					'The work was not automatically replayed.',
 				details:
 					'Recovery settles interrupted work as failed when it cannot prove that resuming or replaying is ' +
 					'safe: a repeated model or tool call could duplicate external effects.',
 				dev: '',
-				meta: {
-					phase: input.phase,
-					...(input.interruptedTools ? { interruptedTools: input.interruptedTools } : {}),
-				},
+				meta: { phase: input.phase },
 			});
 		}
 	}

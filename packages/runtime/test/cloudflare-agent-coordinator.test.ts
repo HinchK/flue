@@ -7,7 +7,7 @@ import { createCloudflareAgentRuntime } from '../src/cloudflare/agent-coordinato
 import type {
 	AgentSubmissionInspection,
 	AgentSubmissionInterruption,
-	DirectAgentSubmissionInput,
+	AgentSubmissionInput,
 } from '../src/runtime/agent-submissions.ts';
 
 afterEach(() => {
@@ -144,8 +144,8 @@ function makeRecoveryContext(options: {
 }
 
 function directInput(
-	overrides: Partial<DirectAgentSubmissionInput> = {},
-): DirectAgentSubmissionInput {
+	overrides: Partial<AgentSubmissionInput> = {},
+): AgentSubmissionInput {
 	return {
 		kind: 'direct',
 		submissionId: 'direct-1',
@@ -560,7 +560,14 @@ describe('createCloudflareAgentRuntime()', () => {
 		await processed;
 
 		expect(processedInputs).toEqual([
-			{ ...dispatchInput(), kind: 'dispatch', submissionId: 'dispatch-1' },
+			{
+				kind: 'dispatch',
+				submissionId: 'dispatch-1',
+				agent: 'assistant',
+				id: 'agent-1',
+				message: { kind: 'signal', type: 'test.event', body: 'Hello' },
+				acceptedAt: '2026-06-03T00:00:00.000Z',
+			},
 		]);
 	});
 
@@ -745,7 +752,14 @@ describe('createCloudflareAgentRuntime()', () => {
 		await runDetachedFiber?.();
 
 		expect(processedInputs).toEqual([
-			{ ...dispatchInput(), kind: 'dispatch', submissionId: 'dispatch-1' },
+			{
+				kind: 'dispatch',
+				submissionId: 'dispatch-1',
+				agent: 'assistant',
+				id: 'agent-1',
+				message: { kind: 'signal', type: 'test.event', body: 'Hello' },
+				acceptedAt: '2026-06-03T00:00:00.000Z',
+			},
 		]);
 	});
 

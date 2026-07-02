@@ -52,10 +52,7 @@ export {
 } from './instrumentation.ts';
 export { createNodeAgentCoordinator, createNodeDispatchQueue } from './node/agent-coordinator.ts';
 export { InMemoryRunStore } from './node/run-store.ts';
-export type {
-	DirectAgentSubmissionInput,
-	DispatchAgentSubmissionInput,
-} from './runtime/agent-submissions.ts';
+export type { AgentSubmissionInput } from './runtime/agent-submissions.ts';
 export type { AttachmentStore } from './runtime/attachment-store.ts';
 export { InMemoryAttachmentStore } from './runtime/attachment-store.ts';
 export type { ConversationStreamStore } from './runtime/conversation-stream-store.ts';

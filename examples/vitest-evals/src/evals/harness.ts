@@ -55,7 +55,7 @@ export function createFlueAgentHarness(options: FlueAgentHarnessOptions) {
 		run: async ({ input, signal }) => {
 			const instanceId = `eval-${crypto.randomUUID()}`;
 			const admission = await client.agents.send(options.agentName, instanceId, {
-				message: input,
+				message: { kind: 'user', body: input },
 				signal,
 			});
 			await client.agents.wait(admission, { signal });

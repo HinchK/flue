@@ -53,11 +53,7 @@ export {
 
 // ─── Submission input types ─────────────────────────────────────────────────
 
-export type {
-	AgentSubmissionInput,
-	DirectAgentSubmissionInput,
-	DispatchAgentSubmissionInput,
-} from './runtime/agent-submissions.ts';
+export type { AgentSubmissionInput } from './runtime/agent-submissions.ts';
 
 export { createDispatchAgentSubmissionInput } from './runtime/agent-submissions.ts';
 
@@ -65,8 +61,14 @@ export type { DispatchInput } from './runtime/dispatch-queue.ts';
 
 // ─── Adapter helper functions ───────────────────────────────────────────────
 
-export type { SubmissionPayloadContext } from './adapter-helpers.ts';
+export type {
+	SubmissionAdmissionBackend,
+	SubmissionAdmissionRow,
+	SubmissionInsertRow,
+	SubmissionPayloadContext,
+} from './adapter-helpers.ts';
 export {
+	admitSubmissionWithBackend,
 	clampLimit,
 	isSubmissionPayload,
 	parseAcceptedAt,

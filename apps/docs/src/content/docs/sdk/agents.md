@@ -11,29 +11,39 @@ Direct agent APIs interact with persistent agent instances by agent name and ins
 send(name: string, id: string, options: AgentPromptOptions): Promise<AgentSendResult>;
 ```
 
-Delivers one prompt to a persistent agent instance and resolves as soon as the submission is durably admitted — it does **not** wait for the agent to respond. This uses `POST /agents/:name/:id`, which returns `202`.
+Delivers one message to a persistent agent instance and resolves as soon as the submission is durably admitted — it does **not** wait for the agent to respond. This uses `POST /agents/:name/:id`, which returns `202`.
 
-Agent prompts are fire-and-forget: a prompt is delivered into the instance's living conversation and has no single terminal "result" value to return. To await completion, pass the result to `agents.wait()`; to read the agent's reply, observe the conversation with `agents.observe()` or read `agents.history()`.
+Agent messages are fire-and-forget: a message is delivered into the instance's living conversation and has no single terminal "result" value to return. To await completion, pass the result to `agents.wait()`; to read the agent's reply, observe the conversation with `agents.observe()` or read `agents.history()`.
 
 ### `AgentPromptOptions`
 
-| Field     | Type                 | Description                                                  |
-| --------- | -------------------- | ------------------------------------------------------------ |
-| `message` | `string`             | Prompt sent to the agent instance.                           |
-| `images`  | `AgentPromptImage[]` | Optional image attachments. Requires a vision-capable model. |
-| `signal`  | `AbortSignal`        | Cancel the in-flight HTTP request.                           |
+| Field     | Type               | Description                                     |
+| --------- | ------------------ | ----------------------------------------------- |
+| `message` | `DeliveredMessage` | The message delivered into the agent's session. |
+| `signal`  | `AbortSignal`      | Cancel the in-flight HTTP request.              |
 
-### `AgentPromptImage`
+### `DeliveredMessage`
 
 ```ts
-interface AgentPromptImage {
+type DeliveredMessage =
+  | { kind: 'user'; body: string; attachments?: DeliveredAttachment[] }
+  | {
+      kind: 'signal';
+      type: string;
+      body: string;
+      attributes?: Record<string, string>;
+      tagName?: string;
+    };
+
+interface DeliveredAttachment {
   type: 'image';
   data: string;
   mimeType: string;
+  filename?: string;
 }
 ```
 
-`data` is the base64-encoded image content and `mimeType` its media type, such as `image/png`. The server rejects images whose `data` exceeds 14 MiB of base64 characters.
+This is the same unified shape a server-side `dispatch()` call admits. A `kind: 'user'` message is a direct chat turn — `attachments` carry base64-encoded images (`data`, capped at 14 MiB of base64 characters each; `mimeType` such as `image/png`) for vision-capable models. A `kind: 'signal'` message is a structured event; see the [agent API reference](/docs/api/agent-api/#deliveredmessage) for when to use each kind.
 
 ### `AgentSendResult`
 
@@ -59,11 +69,11 @@ Awaits completion of a prompt returned by `send()`. Resolves once the submission
 
 ### `AgentWaitOptions`
 
-| Field            | Type                                       | Description                                                                                                            |
-| ---------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| `signal`         | `AbortSignal`                              | Stop waiting locally. This does not abort the submission — use `agents.abort()` for that.                            |
+| Field            | Type                                       | Description                                                                                                                   |
+| ---------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `signal`         | `AbortSignal`                              | Stop waiting locally. This does not abort the submission — use `agents.abort()` for that.                                     |
 | `onEvent`        | `(chunk: ConversationStreamChunk) => void` | Called for each conversation update while waiting, for progress rendering. Prefer `agents.observe()` for maintained UI state. |
-| `backoffOptions` | `BackoffOptions`                           | Reconnect backoff tuning for the underlying stream.                                                                  |
+| `backoffOptions` | `BackoffOptions`                           | Reconnect backoff tuning for the underlying stream.                                                                           |
 
 ## `client.agents.abort(...)`
 
@@ -73,7 +83,7 @@ abort(name: string, id: string, options?: { signal?: AbortSignal }): Promise<Age
 
 Aborts all in-flight and queued durable work for an agent instance — the submission it is currently running and anything queued behind it. This uses `POST /agents/:name/:id/abort`.
 
-Abort records a durable intent and returns once it is recorded; settlement happens asynchronously. The aborted work settles to a distinct **aborted** terminal outcome rather than a failure: a `submission_aborted` entry is written to the conversation (visible via `observe()`/`history()`), and a pending `wait()` rejects with `FlueExecutionError` carrying the `submission_aborted` outcome. Work that has already completed is not affected — an abort that loses the race to a finished response settles as completed.
+Abort records a durable intent and returns once it is recorded; settlement happens asynchronously. The aborted work settles to a distinct **aborted** terminal outcome rather than a failure: a `submission_aborted` entry is written to the conversation (visible via `observe()`/`history()`), and a pending `wait()` rejects with `FlueExecutionError` carrying `failure: 'aborted'`. Work that has already completed is not affected — an abort that loses the race to a finished response settles as completed.
 
 ### `AgentAbortResult`
 

@@ -1,6 +1,7 @@
 import type { HttpClient } from '../http.ts';
 
-export interface AgentPromptImage {
+/** One image attachment on a `kind: 'user'` delivered message. */
+export interface DeliveredAttachment {
 	type: 'image';
 	data: string;
 	mimeType: string;
@@ -8,10 +9,25 @@ export interface AgentPromptImage {
 	filename?: string;
 }
 
+/**
+ * The message delivered into an agent's session — the same unified shape the
+ * server accepts from `dispatch()`. `kind: 'user'` is a direct user chat turn;
+ * `kind: 'signal'` is a structured event (webhooks, schedules, multi-user
+ * surfaces the agent participates in).
+ */
+export type DeliveredMessage =
+	| { kind: 'user'; body: string; attachments?: DeliveredAttachment[] }
+	| {
+			kind: 'signal';
+			type: string;
+			body: string;
+			attributes?: Record<string, string>;
+			tagName?: string;
+	  };
+
 /** Options for one direct-agent prompt. */
 export interface AgentPromptOptions {
-	message: string;
-	images?: AgentPromptImage[];
+	message: DeliveredMessage;
 	signal?: AbortSignal;
 }
 
@@ -37,7 +53,7 @@ export async function sendAgent(
 	return http.json<AgentSendResult>({
 		method: 'POST',
 		path: `/agents/${encodeURIComponent(name)}/${encodeURIComponent(id)}`,
-		body: { message: options.message, ...(options.images ? { images: options.images } : {}) },
+		body: options.message,
 		signal: options.signal,
 	});
 }

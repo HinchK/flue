@@ -8,10 +8,7 @@
  */
 
 import type { SubmissionSettledRecord } from './conversation-records.ts';
-import type {
-	AgentSubmissionInput,
-	DirectAgentSubmissionInput,
-} from './runtime/agent-submissions.ts';
+import type { AgentSubmissionInput } from './runtime/agent-submissions.ts';
 import type { AttachmentStore } from './runtime/attachment-store.ts';
 import type { ConversationStreamStore } from './runtime/conversation-stream-store.ts';
 import type { DispatchInput } from './runtime/dispatch-queue.ts';
@@ -171,10 +168,10 @@ export interface AgentSubmissionStore {
 	 */
 	admitDispatch(input: DispatchInput): Promise<AgentDispatchAdmission>;
 	/**
-	 * Admit a direct prompt as a queued submission. Idempotent for an exact
-	 * replay of the same submission id and payload.
+	 * Admit a direct prompt (`input.kind === 'direct'`) as a queued submission.
+	 * Idempotent for an exact replay of the same submission id and payload.
 	 */
-	admitDirect(input: DirectAgentSubmissionInput): Promise<AgentSubmission>;
+	admitDirect(input: AgentSubmissionInput): Promise<AgentSubmission>;
 	/**
 	 * Mark a newly admitted queued submission's canonical conversation as materialized.
 	 * Idempotent while queued; returns `null` when the submission is missing or no longer queued.

@@ -450,27 +450,31 @@ describe('session.task()', () => {
 		const internal = getInternalSession(session);
 		if (!internal) throw new Error('Expected internal session.');
 
-		const first = await internal.processSubmissionInput({
+		const firstInput = {
 			kind: 'dispatch',
 			submissionId: 'job/a',
-			dispatchId: 'job/a',
 			agent: 'assistant',
 			id: 'agent-1',
 			message: { kind: 'signal', type: 'test.event', body: 'first' },
 			acceptedAt: new Date().toISOString(),
-		});
-		const second = await internal.processSubmissionInput({
+		} as const;
+		const secondInput = {
 			kind: 'dispatch',
 			submissionId: 'job?a',
-			dispatchId: 'job?a',
 			agent: 'assistant',
 			id: 'agent-1',
 			message: { kind: 'signal', type: 'test.event', body: 'second' },
 			acceptedAt: new Date().toISOString(),
-		});
+		} as const;
 
-		expect(first.text).toBe('First response.');
-		expect(second.text).toBe('Second response.');
+		await internal.processSubmissionInput(firstInput);
+		// Distinct submission ids: the second input must not alias the first's
+		// canonical entry, or it would classify as already completed here.
+		expect(await internal.inspectSubmissionInput(secondInput)).toBe('absent');
+		await internal.processSubmissionInput(secondInput);
+
+		expect(await internal.inspectSubmissionInput(firstInput)).toBe('completed');
+		expect(await internal.inspectSubmissionInput(secondInput)).toBe('completed');
 	});
 
 	it('reuses an already committed interrupted-stream recovery after restart', async () => {
@@ -786,10 +790,9 @@ describe('session.task()', () => {
 		const internal = getInternalSession(await harness.session());
 		if (!internal) throw new Error('Expected internal session.');
 
-		const response = await internal.processSubmissionInput({
+		await internal.processSubmissionInput({
 			kind: 'dispatch',
 			submissionId: 'dispatch-image',
-			dispatchId: 'dispatch-image',
 			agent: 'assistant',
 			id: 'dispatch-image-instance',
 			message: {
@@ -800,7 +803,6 @@ describe('session.task()', () => {
 			acceptedAt: new Date().toISOString(),
 		});
 
-		expect(response.text).toBe('Inspected the dispatched image.');
 		const content = promptContext as { content: Array<{ type: string }> };
 		expect(content.content.some((block) => block.type === 'image')).toBe(true);
 	});

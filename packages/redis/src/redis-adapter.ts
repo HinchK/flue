@@ -6,8 +6,7 @@ import type {
 	AgentSubmission,
 	AgentSubmissionStore,
 	CreateRunInput,
-	DirectAgentSubmissionInput,
-	DispatchAgentSubmissionInput,
+	AgentSubmissionInput,
 	DispatchInput,
 	EndRunInput,
 	EventStreamMeta,
@@ -382,7 +381,7 @@ class RedisSubmissionStore implements AgentSubmissionStore {
 		return this.admitSubmission(createDispatchAgentSubmissionInput(input));
 	}
 
-	async admitDirect(input: DirectAgentSubmissionInput): Promise<AgentSubmission> {
+	async admitDirect(input: AgentSubmissionInput): Promise<AgentSubmission> {
 		const admission = await this.admitSubmission(input);
 		if (admission.kind !== 'submission')
 			throw new TypeError('Internal direct admission returned an unexpected result.');
@@ -548,7 +547,7 @@ class RedisSubmissionStore implements AgentSubmissionStore {
 	}
 
 	private async admitSubmission(
-		input: DispatchAgentSubmissionInput | DirectAgentSubmissionInput,
+		input: AgentSubmissionInput,
 	): Promise<AgentDispatchAdmission> {
 		const prepared = prepareSubmissionAttachments(input);
 		const generation = randomUUID();
@@ -668,7 +667,7 @@ class RedisSubmissionStore implements AgentSubmissionStore {
 		if (
 			!matchesPersistedSubmissionAttachments(
 				input,
-				JSON.parse(persisted.payload) as DirectAgentSubmissionInput | DispatchAgentSubmissionInput,
+				JSON.parse(persisted.payload) as AgentSubmissionInput,
 				persisted.chunks,
 			)
 		)
@@ -807,7 +806,7 @@ class RedisSubmissionStore implements AgentSubmissionStore {
 		const kind = required(row.kind, malformed) as 'dispatch' | 'direct';
 		const persisted = await this.readSubmissionGeneration(submissionId);
 		const acceptedAt = integer(row.acceptedAt);
-		const parsed = JSON.parse(persisted.payload) as DirectAgentSubmissionInput | DispatchAgentSubmissionInput;
+		const parsed = JSON.parse(persisted.payload) as AgentSubmissionInput;
 		const input = hydratePersistedSubmissionAttachments(parsed, persisted.chunks);
 		if (!isSubmissionPayload(input, { kind, submissionId, sessionKey, acceptedAt }))
 			throw new TypeError(malformed);

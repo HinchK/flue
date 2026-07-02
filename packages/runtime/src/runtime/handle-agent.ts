@@ -1,6 +1,5 @@
 /** Shared per-agent HTTP dispatcher for the Node and Cloudflare targets. */
 
-import * as v from 'valibot';
 import { parseActionInput, runActionWithParsedInput } from '../action.ts';
 import type { FlueContextInternal } from '../client.ts';
 import {
@@ -15,12 +14,7 @@ import {
 	interceptExecution,
 } from '../execution-interceptor.ts';
 import { assertProductEventV3 } from '../product-event.ts';
-import type {
-	DeliveredMessage,
-	DirectAgentPayload,
-	FlueEvent,
-	FlueEventCallback,
-} from '../types.ts';
+import type { FlueEvent, FlueEventCallback } from '../types.ts';
 import { isWorkflowDefinition, type WorkflowDefinition } from '../workflow-definition.ts';
 import type { AttachedAgentSubmissionAdmission } from './agent-submissions.ts';
 import type { DispatchInput } from './dispatch-queue.ts';
@@ -29,7 +23,7 @@ import { type EventStreamStore, runStreamPath } from './event-stream-store.ts';
 import { generateWorkflowRunId } from './ids.ts';
 import { isBufferedRunEvent, isStreamExcludedEvent, type RunStore } from './run-store.ts';
 import type { RuntimeActivityGate, RuntimeActivityLease } from './runtime-activity-gate.ts';
-import { DirectAgentPayloadSchema, parseDeliveredMessage } from './schemas.ts';
+import { parseDeliveredMessage } from './schemas.ts';
 
 export function assertWorkflowDefinition(value: unknown, name: string): asserts value is WorkflowDefinition {
 	if (!isWorkflowDefinition(value)) {
@@ -57,33 +51,6 @@ function isDispatchInput(value: unknown): value is DispatchInput {
 		typeof input.acceptedAt === 'string' &&
 		input.acceptedAt.trim() !== ''
 	);
-}
-
-/**
- * Parse the wire body for `POST /agents/:name/:id` and map it onto a
- * {@link DeliveredMessage}. The wire shape itself is unchanged (the SDK's
- * `AgentPromptOptions`/`client.agents.send()` contract) — this just
- * constructs the same `kind: 'user'` message a `dispatch()` call would
- * build, then runs it through the identical {@link parseDeliveredMessage}
- * validation so both transports produce the same structured
- * {@link InvalidRequestError} on bad input.
- */
-function parseDirectAgentMessage(payload: unknown): DeliveredMessage {
-	const parsed = v.safeParse(DirectAgentPayloadSchema, payload);
-	if (!parsed.success) {
-		const oversizedImageIssue = parsed.issues.find((issue) => issue.type === 'max_length');
-		throw new InvalidRequestError({
-			reason:
-				oversizedImageIssue?.message ??
-				'Direct agent requests must use JSON object body { "message": string, "images"?: image[] }.',
-		});
-	}
-	const payloadValue: DirectAgentPayload = parsed.output;
-	return parseDeliveredMessage({
-		kind: 'user',
-		body: payloadValue.message,
-		...(payloadValue.images ? { attachments: payloadValue.images } : {}),
-	});
 }
 
 /**
@@ -195,16 +162,17 @@ export async function handleAgentRequest(opts: HandleAgentOptions): Promise<Resp
 					"Await completion with the SDK client's `agents.wait()`, or read the conversation stream (GET this URL).",
 			});
 		}
-		const rawPayload = await parseJsonBody(request);
-		const message = parseDirectAgentMessage(rawPayload);
+		// The wire body IS a DeliveredMessage — the same validated shape a
+		// `dispatch()` call admits, so both transports share one schema and
+		// produce the same structured InvalidRequestError on bad input.
+		const message = parseDeliveredMessage(await parseJsonBody(request));
 		const traceCarrier = extractTraceCarrier(request.headers);
 		const streamUrl = invocationStreamUrl(request);
 		const receipt = await opts.admitAttachedSubmission(message, traceCarrier);
-		const offset = receipt.offset ?? '-1';
 		return admissionResponse(
-			{ streamUrl, offset, submissionId: receipt.submissionId },
+			{ streamUrl, offset: receipt.offset, submissionId: receipt.submissionId },
 			streamUrl,
-			offset,
+			receipt.offset,
 		);
 	} catch (err) {
 		return toHttpResponse(err);

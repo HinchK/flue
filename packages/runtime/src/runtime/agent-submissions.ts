@@ -16,25 +16,19 @@ import {
 } from '../errors.ts';
 import { type FlueTraceCarrier, interceptExecution } from '../execution-interceptor.ts';
 import { getInternalSession } from '../session.ts';
-import type {
-	AgentDefinition,
-	AttachedAgentEvent,
-	CallHandle,
-	DeliveredMessage,
-} from '../types.ts';
+import type { AgentDefinition, CallHandle, DeliveredMessage } from '../types.ts';
 import { type AttachmentStore, createAttachmentRef } from './attachment-store.ts';
 import type { DispatchInput } from './dispatch-queue.ts';
 import { agentStreamPath } from './event-stream-store.ts';
-import { assertAgentDispatchAdmissionInput } from './handle-agent.ts';
 
-export interface DispatchAgentSubmissionInput extends DispatchInput {
-	readonly kind: 'dispatch';
-	readonly submissionId: string;
-	readonly traceCarrier?: FlueTraceCarrier;
-}
-
-export interface DirectAgentSubmissionInput {
-	readonly kind: 'direct';
+/**
+ * One admitted agent submission — the persisted operational payload for both
+ * transports. `kind` records how the submission arrived (`'dispatch'` via
+ * `dispatch()`, `'direct'` via the agent HTTP route); a dispatch's
+ * `submissionId` is the public `dispatchId` from its receipt.
+ */
+export interface AgentSubmissionInput {
+	readonly kind: 'dispatch' | 'direct';
 	readonly submissionId: string;
 	readonly agent: string;
 	readonly id: string;
@@ -42,8 +36,6 @@ export interface DirectAgentSubmissionInput {
 	readonly acceptedAt: string;
 	readonly traceCarrier?: FlueTraceCarrier;
 }
-
-export type AgentSubmissionInput = DispatchAgentSubmissionInput | DirectAgentSubmissionInput;
 
 export interface AgentSubmissionInterruption {
 	readonly submissionId: string;
@@ -55,8 +47,6 @@ export interface AgentSubmissionInterruption {
 		| 'exceeded_timeout'
 		| 'aborted';
 	readonly message: string;
-	/** Tool calls that were requested but whose outcomes could not be confirmed. */
-	readonly interruptedTools?: ReadonlyArray<{ readonly name: string; readonly id: string }>;
 }
 
 export type AgentSubmissionInspection = 'absent' | 'completed' | 'continuable' | 'uncertain';
@@ -83,7 +73,7 @@ export interface AgentSubmissionSession {
 	processSubmissionInput(
 		input: AgentSubmissionInput,
 		options?: ProcessAgentSubmissionOptions,
-	): CallHandle<unknown>;
+	): CallHandle<void>;
 	recoverInterruptedStream(
 		attempt: SubmissionAttemptRef,
 		turnId?: string,
@@ -93,7 +83,7 @@ export interface AgentSubmissionSession {
 
 interface AttachedAgentSubmissionReceipt {
 	readonly submissionId: string;
-	readonly offset?: string;
+	readonly offset: string;
 }
 
 export type AttachedAgentSubmissionAdmission = (
@@ -101,10 +91,15 @@ export type AttachedAgentSubmissionAdmission = (
 	traceCarrier?: FlueTraceCarrier,
 ) => Promise<AttachedAgentSubmissionReceipt>;
 
-export function createDispatchAgentSubmissionInput(
-	input: DispatchInput,
-): DispatchAgentSubmissionInput {
-	return { ...input, kind: 'dispatch', submissionId: input.dispatchId };
+export function createDispatchAgentSubmissionInput(input: DispatchInput): AgentSubmissionInput {
+	return {
+		kind: 'dispatch',
+		submissionId: input.dispatchId,
+		agent: input.agent,
+		id: input.id,
+		message: input.message,
+		acceptedAt: input.acceptedAt,
+	};
 }
 
 export function createDirectAgentSubmissionInput(options: {
@@ -112,7 +107,7 @@ export function createDirectAgentSubmissionInput(options: {
 	id: string;
 	message: DeliveredMessage;
 	traceCarrier?: FlueTraceCarrier;
-}): DirectAgentSubmissionInput {
+}): AgentSubmissionInput {
 	return {
 		kind: 'direct',
 		submissionId: crypto.randomUUID(),
@@ -169,8 +164,9 @@ export function createAgentSubmissionSessionHandler(
 	};
 }
 
-function agentSubmissionDispatchId(input: AgentSubmissionInput): string | undefined {
-	return input.kind === 'dispatch' ? input.dispatchId : undefined;
+/** The public dispatch id for a dispatched submission (its `submissionId`), or `undefined` for a direct prompt. */
+export function agentSubmissionDispatchId(input: AgentSubmissionInput): string | undefined {
+	return input.kind === 'dispatch' ? input.submissionId : undefined;
 }
 
 /**
@@ -447,7 +443,6 @@ export async function processSubmission(opts: ProcessSubmissionOptions): Promise
 	const { submissions, submission } = opts;
 	const { input } = submission;
 	if (!submission.attemptId) return;
-	if (input.kind === 'dispatch') assertAgentDispatchAdmissionInput(input);
 	const attempt: SubmissionAttemptRef = {
 		submissionId: submission.submissionId,
 		attemptId: submission.attemptId,
@@ -713,14 +708,14 @@ async function settleDirectSubmission(
 	outcome: 'completed' | 'failed' | 'aborted',
 	error?: unknown,
 	conversationWriter?: ConversationRecordWriter,
-): Promise<boolean> {
+): Promise<void> {
 	const event = ctx.createEvent({
 		type: 'submission_settled',
 		submissionId: attempt.submissionId,
 		outcome,
 		...(outcome === 'completed' ? {} : { error: serializeSubmissionError(error) }),
 	});
-	if (!conversationWriter) return false;
+	if (!conversationWriter) return;
 	const eventKey = `record_direct-submission:${attempt.submissionId}:settled`;
 	const reduced = await conversationWriter.loadReducedState();
 	const conversation =
@@ -730,7 +725,7 @@ async function settleDirectSubmission(
 		[...reduced.conversations.values()].find(
 			(candidate) => candidate.harness === 'default' && candidate.session === 'default',
 		);
-	if (!conversation) return false;
+	if (!conversation) return;
 	const pending = (await submissions.listPendingSubmissionSettlements()).find(
 		(candidate) => candidate.submissionId === attempt.submissionId,
 	);
@@ -754,7 +749,7 @@ async function settleDirectSubmission(
 			recordId: eventKey,
 			record: settlement,
 		}));
-	if (!obligation) return false;
+	if (!obligation) return;
 	const existing = await conversationWriter.getRecord(eventKey);
 	if (!existing) {
 		await conversationWriter.append([obligation.record], { submission: attempt });
@@ -772,13 +767,13 @@ async function settleDirectSubmission(
 			{ submissionId: attempt.submissionId, recordId: eventKey },
 		);
 	}
-	ctx.publishEvent(event as AttachedAgentEvent);
+	ctx.publishEvent(event);
 	try {
 		await ctx.flushEventCallbacks();
 	} catch (callbackError) {
 		console.error('[flue:subscriber] Terminal event subscriber failed:', callbackError);
 	}
-	return submissions.finalizeSubmissionSettlement(attempt, eventKey);
+	await submissions.finalizeSubmissionSettlement(attempt, eventKey);
 }
 
 function decodeBase64(value: string): Uint8Array {

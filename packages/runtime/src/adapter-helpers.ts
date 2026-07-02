@@ -9,7 +9,19 @@
  */
 
 import * as v from 'valibot';
-import type { AgentSubmission } from './agent-execution-store.ts';
+import type {
+	AgentDispatchAdmission,
+	AgentDispatchReceipt,
+	AgentSubmission,
+} from './agent-execution-store.ts';
+import type { PersistedChunkOwner, PersistedChunkRow } from './persisted-image-placement.ts';
+import {
+	matchesPersistedSubmissionAttachments,
+	prepareSubmissionAttachments,
+	samePersistedChunks,
+	submissionChunkOwner,
+} from './persisted-image-placement.ts';
+import type { AgentSubmissionInput } from './runtime/agent-submissions.ts';
 import { DeliveredMessageSchema } from './runtime/schemas.ts';
 import { createSessionStorageKey } from './session-identity.ts';
 
@@ -63,21 +75,6 @@ export function isSubmissionPayload(
 	const value = input as Record<string, unknown>;
 	if (value.kind !== ctx.kind || value.submissionId !== ctx.submissionId) return false;
 	if (!v.safeParse(DeliveredMessageSchema, value.message).success) return false;
-	if (value.kind === 'dispatch') {
-		return (
-			typeof value.dispatchId === 'string' &&
-			value.dispatchId === value.submissionId &&
-			typeof value.agent === 'string' &&
-			typeof value.id === 'string' &&
-			createSessionStorageKey(
-				value.id as string,
-				SUBMISSION_HARNESS_NAME,
-				SUBMISSION_SESSION_NAME,
-			) === ctx.sessionKey &&
-			typeof value.acceptedAt === 'string' &&
-			Date.parse(value.acceptedAt as string) === ctx.acceptedAt
-		);
-	}
 	return (
 		typeof value.agent === 'string' &&
 		typeof value.id === 'string' &&
@@ -88,6 +85,148 @@ export function isSubmissionPayload(
 		) === ctx.sessionKey &&
 		typeof value.acceptedAt === 'string' &&
 		Date.parse(value.acceptedAt as string) === ctx.acceptedAt
+	);
+}
+
+// ─── Submission admission ───────────────────────────────────────────────────
+
+/**
+ * Run a maybe-async continuation without forcing a promise: when `value` is a
+ * plain value the continuation runs synchronously, so a fully synchronous
+ * backend (e.g. Durable Object SQLite inside `transactionSync`) completes the
+ * whole admission without ever yielding to the microtask queue.
+ */
+function chain<T, R>(value: T | Promise<T>, next: (value: T) => R | Promise<R>): R | Promise<R> {
+	return value instanceof Promise ? value.then(next) : next(value);
+}
+
+/** The queued row that {@link admitSubmissionWithBackend} writes on first admission. */
+export interface SubmissionInsertRow {
+	readonly submissionId: string;
+	readonly sessionKey: string;
+	readonly kind: 'dispatch' | 'direct';
+	readonly payload: string;
+	readonly acceptedAt: number;
+}
+
+/**
+ * The minimal shape {@link admitSubmissionWithBackend} needs from a persisted
+ * submission row: the transport `kind` and serialized `payload` it compares
+ * against the incoming admission.
+ */
+export interface SubmissionAdmissionRow {
+	readonly kind?: unknown;
+	readonly payload?: unknown;
+}
+
+/**
+ * Storage callbacks for {@link admitSubmissionWithBackend}.
+ *
+ * Every callback runs inside the transaction the caller has already opened.
+ * Callbacks may return plain values (synchronous backends) or native
+ * `Promise`s — non-native thenables are not supported.
+ */
+export interface SubmissionAdmissionBackend<Row extends SubmissionAdmissionRow> {
+	/** Look up a retained dispatch receipt. Only consulted for `kind: 'dispatch'`. */
+	getDispatchReceipt(
+		submissionId: string,
+	): AgentDispatchReceipt | null | Promise<AgentDispatchReceipt | null>;
+	/** Insert the queued submission row, ignoring a duplicate `submissionId`. */
+	insertIfAbsent(row: SubmissionInsertRow): void | Promise<void>;
+	/** Read back the submission row for `submissionId`, if present. */
+	getExisting(submissionId: string): Row | undefined | Promise<Row | undefined>;
+	/** Read the persisted attachment chunks for the submission. */
+	readChunks(
+		owner: PersistedChunkOwner,
+	): readonly PersistedChunkRow[] | Promise<readonly PersistedChunkRow[]>;
+	/** Replace the persisted attachment chunks for the submission. */
+	replaceChunks(
+		owner: PersistedChunkOwner,
+		chunks: readonly PersistedChunkRow[],
+	): void | Promise<void>;
+	/** Parse a persisted row (plus its attachment chunks) into an {@link AgentSubmission}. */
+	parseSubmission(row: Row, chunks: readonly PersistedChunkRow[]): AgentSubmission;
+}
+
+/**
+ * Shared submission admission algorithm for row-oriented backends:
+ * dispatch-receipt check → prepare attachments → insert-or-ignore →
+ * read-back → payload compare (idempotent replay vs. conflict) →
+ * attachment-chunk adoption or comparison.
+ *
+ * The caller owns transaction scoping — invoke this inside one transaction
+ * and pass callbacks bound to it. When every callback is synchronous the
+ * result is returned synchronously, so the algorithm also fits synchronous
+ * transaction wrappers such as Durable Object `transactionSync`.
+ */
+export function admitSubmissionWithBackend<Row extends SubmissionAdmissionRow>(
+	input: AgentSubmissionInput,
+	backend: SubmissionAdmissionBackend<Row>,
+): AgentDispatchAdmission | Promise<AgentDispatchAdmission> {
+	const { kind, submissionId } = input;
+	const prepared = prepareSubmissionAttachments(input);
+	const payload = JSON.stringify(prepared.value);
+	const acceptedAt = parseAcceptedAt(input.acceptedAt, `${kind} admission`);
+	const sessionKey = createSessionStorageKey(
+		input.id,
+		SUBMISSION_HARNESS_NAME,
+		SUBMISSION_SESSION_NAME,
+	);
+	const owner = submissionChunkOwner(submissionId);
+
+	const adopt = (row: Row): AgentDispatchAdmission | Promise<AgentDispatchAdmission> => {
+		if (row.kind !== kind) return { kind: 'conflict' as const };
+		if (row.payload !== payload) {
+			// Serialized payloads differ, but the admission may still be an
+			// idempotent replay once persisted attachment chunks are hydrated
+			// back into the stored payload.
+			return chain(backend.readChunks(owner), (persistedChunks) => {
+				if (
+					typeof row.payload !== 'string' ||
+					!matchesPersistedSubmissionAttachments(
+						input,
+						JSON.parse(row.payload) as AgentSubmissionInput,
+						persistedChunks,
+					)
+				) {
+					return { kind: 'conflict' as const };
+				}
+				return {
+					kind: 'submission' as const,
+					submission: backend.parseSubmission(row, persistedChunks),
+				};
+			});
+		}
+		return chain(backend.readChunks(owner), (persistedChunks) => {
+			if (persistedChunks.length === 0 && prepared.chunks.length > 0) {
+				return chain(backend.replaceChunks(owner, prepared.chunks), () => ({
+					kind: 'submission' as const,
+					submission: backend.parseSubmission(row, prepared.chunks),
+				}));
+			}
+			if (!samePersistedChunks(persistedChunks, prepared.chunks)) {
+				return { kind: 'conflict' as const };
+			}
+			return {
+				kind: 'submission' as const,
+				submission: backend.parseSubmission(row, prepared.chunks),
+			};
+		});
+	};
+
+	const admit = (): AgentDispatchAdmission | Promise<AgentDispatchAdmission> =>
+		chain(backend.insertIfAbsent({ submissionId, sessionKey, kind, payload, acceptedAt }), () =>
+			chain(backend.getExisting(submissionId), (row) => {
+				if (!row) {
+					throw new Error(`[flue] Durable ${kind} admission did not create a submission row.`);
+				}
+				return adopt(row);
+			}),
+		);
+
+	if (kind !== 'dispatch') return admit();
+	return chain(backend.getDispatchReceipt(submissionId), (receipt) =>
+		receipt ? { kind: 'retained_receipt' as const, receipt } : admit(),
 	);
 }
 

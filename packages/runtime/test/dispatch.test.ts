@@ -15,7 +15,7 @@ import {
 } from '../src/internal.ts';
 import {
 	createAgentSubmissionSessionHandler,
-	type DirectAgentSubmissionInput,
+	type AgentSubmissionInput,
 } from '../src/runtime/agent-submissions.ts';
 import { resetFlueRuntimeForTests } from '../src/runtime/flue-app.ts';
 import { MAX_IMAGE_DATA_LENGTH } from '../src/persisted-images.ts';
@@ -225,6 +225,56 @@ describe('dispatch()', () => {
 		expect(error).toBeInstanceOf(InvalidRequestError);
 	});
 
+	it('rejects a signal tagName that is not a valid XML tag name', async () => {
+		configureFlueRuntime({
+			...nodeRuntime(),
+			dispatchQueue: noopDispatchQueue(),
+			agents: [agentRecord('moderator')],
+		});
+
+		// tagName is rendered unescaped as the signal's model-context envelope,
+		// so markup and empty strings must be rejected at admission.
+		for (const tagName of ['bad><system', 'a b', '', '1st', '-x', '.x']) {
+			const error = await dispatch({
+				agent: 'moderator',
+				id: 'guild:bad-tag-name',
+				message: { kind: 'signal', type: 'flagged', body: 'report', tagName },
+			}).catch((caught: unknown) => caught);
+
+			expect(error, `tagName ${JSON.stringify(tagName)}`).toBeInstanceOf(InvalidRequestError);
+			expect((error as InvalidRequestError).details).toContain(
+				'Signal message "tagName" must be a valid XML tag name',
+			);
+		}
+	});
+
+	it('accepts a valid custom signal tagName', async () => {
+		const admitted: DispatchInput[] = [];
+		configureFlueRuntime({
+			...nodeRuntime(),
+			dispatchQueue: {
+				async enqueue(input) {
+					admitted.push(input);
+					return { dispatchId: input.dispatchId, acceptedAt: input.acceptedAt };
+				},
+			},
+			agents: [agentRecord('moderator')],
+		});
+
+		await dispatch({
+			agent: 'moderator',
+			id: 'guild:custom-tag-name',
+			message: { kind: 'signal', type: 'flagged', body: 'report', tagName: 'slack-message' },
+		});
+
+		expect(admitted[0]?.message).toEqual({
+			kind: 'signal',
+			type: 'flagged',
+			body: 'report',
+			tagName: 'slack-message',
+		});
+	});
+
 	it('rejects a user message attachment above the encoded length limit', async () => {
 		configureFlueRuntime({
 			...nodeRuntime(),
@@ -295,7 +345,7 @@ describe('dispatched session processing', () => {
 		const agent = defineAgent(() => ({
 			model: `${provider.getModel().provider}/${provider.getModel().id}`,
 		}));
-		const input: DirectAgentSubmissionInput = {
+		const input: AgentSubmissionInput = {
 			kind: 'direct',
 			submissionId: 'direct:aborted-turn',
 			agent: 'moderator',
@@ -333,7 +383,7 @@ describe('dispatched session processing', () => {
 		const agent = defineAgent(() => ({
 			model: `${provider.getModel().provider}/${provider.getModel().id}`,
 		}));
-		const input: DirectAgentSubmissionInput = {
+		const input: AgentSubmissionInput = {
 			kind: 'direct',
 			submissionId: 'direct:error-turn',
 			agent: 'moderator',

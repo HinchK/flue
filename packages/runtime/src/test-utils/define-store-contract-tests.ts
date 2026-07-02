@@ -19,7 +19,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentExecutionStore } from '../agent-execution-store.ts';
-import type { DirectAgentSubmissionInput } from '../runtime/agent-submissions.ts';
+import type { AgentSubmissionInput } from '../runtime/agent-submissions.ts';
 import type { DispatchInput } from '../runtime/dispatch-queue.ts';
 
 export { defineAttachmentStoreContractTests } from './define-attachment-store-contract-tests.ts';
@@ -41,8 +41,8 @@ function dispatchInput(overrides: Partial<DispatchInput> = {}): DispatchInput {
 }
 
 function directInput(
-	overrides: Partial<DirectAgentSubmissionInput> = {},
-): DirectAgentSubmissionInput {
+	overrides: Partial<AgentSubmissionInput> = {},
+): AgentSubmissionInput {
 	return {
 		kind: 'direct',
 		submissionId: 'direct-1',
@@ -71,7 +71,7 @@ async function admitDispatchReady(store: AgentExecutionStore, input: DispatchInp
 	return { kind: 'submission' as const, submission: submission ?? admission.submission };
 }
 
-async function admitDirectReady(store: AgentExecutionStore, input: DirectAgentSubmissionInput) {
+async function admitDirectReady(store: AgentExecutionStore, input: AgentSubmissionInput) {
 	const submission = await store.submissions.admitDirect(input);
 	return (await store.submissions.markSubmissionCanonicalReady(submission.submissionId)) ?? submission;
 }
@@ -152,6 +152,44 @@ export function defineStoreContractTests(label: string, backend: StoreContractTe
 				expect((await store.submissions.getSubmission(input.dispatchId))?.input).toMatchObject({
 					message: input.message,
 				});
+			});
+
+			it('returns conflict when one dispatch id is replayed with different attachment bytes', async () => {
+				const store = await create();
+				const attachmentMessage = (data: string): DispatchInput['message'] => ({
+					kind: 'user',
+					body: 'Hello',
+					attachments: [{ type: 'image', data, mimeType: 'image/png' }],
+				});
+				await store.submissions.admitDispatch(
+					dispatchInput({ message: attachmentMessage('first-image') }),
+				);
+				expect(
+					await store.submissions.admitDispatch(
+						dispatchInput({ message: attachmentMessage('second-image') }),
+					),
+				).toEqual({ kind: 'conflict' });
+			});
+
+			it('chunks dispatched attachment bytes out of the stored payload and hydrates them on read', async () => {
+				const store = await create();
+				// Strictly larger than one persisted chunk (256 KiB), so the
+				// bytes must be stored as at least two chunk rows outside the
+				// payload row and reassembled on every read.
+				const imageData = 'd'.repeat(256 * 1024 + 1);
+				const input = dispatchInput({
+					message: {
+						kind: 'user',
+						body: 'Here is the screenshot.',
+						attachments: [{ type: 'image', data: imageData, mimeType: 'image/png' }],
+					},
+				});
+				const admitted = await admitDispatchReady(store, input);
+				if (admitted.kind !== 'submission') throw new Error('Expected a dispatch submission.');
+				expect(admitted.submission.input.message).toEqual(input.message);
+				expect((await store.submissions.getSubmission(input.dispatchId))?.input.message).toEqual(
+					input.message,
+				);
 			});
 		});
 

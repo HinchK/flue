@@ -130,7 +130,7 @@ export default {
     });
 
     const admission = await client.agents.send('support', 'ticket-42', {
-      message: 'Summarize this ticket.',
+      message: { kind: 'user', body: 'Summarize this ticket.' },
     });
 
     return Response.json(admission);

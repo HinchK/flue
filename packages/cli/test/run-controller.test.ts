@@ -36,7 +36,7 @@ describe('runTarget()', () => {
 			}),
 		).resolves.toEqual({ kind: 'agent' });
 		expect(send).toHaveBeenCalledWith('support', 'instance', {
-			message: 'hello',
+			message: { kind: 'user', body: 'hello' },
 			signal: undefined,
 		});
 		expect(wait).toHaveBeenCalledWith(admission, { onEvent: undefined, signal: undefined });

@@ -1,6 +1,6 @@
 import type {
-	AgentPromptImage,
 	ConversationStreamChunk,
+	DeliveredAttachment,
 	FlueClient,
 	FlueEvent,
 	WorkflowRunResult,
@@ -8,7 +8,7 @@ import type {
 
 export interface AgentRunInput {
 	message: string;
-	images?: AgentPromptImage[];
+	images?: DeliveredAttachment[];
 }
 
 interface AgentRunTarget {
@@ -38,13 +38,14 @@ export async function runTarget(
 ): Promise<RunTargetResult> {
 	if (target.kind === 'agent') {
 		const admission = await client.agents.send(target.name, target.instanceId, {
-			...target.input,
+			message: {
+				kind: 'user',
+				body: target.input.message,
+				...(target.input.images?.length ? { attachments: target.input.images } : {}),
+			},
 			signal,
 		});
-		await client.agents.wait(admission, {
-			onEvent: onEvent as ((event: ConversationStreamChunk) => void | Promise<void>) | undefined,
-			signal,
-		});
+		await client.agents.wait(admission, { onEvent, signal });
 		return { kind: 'agent' };
 	}
 	const completed: WorkflowRunResult = await client.workflows.run(target.name, {
@@ -79,7 +80,7 @@ export function assertRunIdAllowed(kind: RunTarget['kind'], id: string | undefin
 	}
 }
 
-function isAgentImages(value: unknown): value is AgentPromptImage[] {
+function isAgentImages(value: unknown): value is DeliveredAttachment[] {
 	return (
 		Array.isArray(value) &&
 		value.every(

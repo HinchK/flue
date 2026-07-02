@@ -87,8 +87,14 @@ export type CreateFlueClientOptions = HttpClientOptions;
 export interface FlueClient {
 	/** Direct interactions with persistent agent instances. */
 	agents: {
-		/** Starts one prompt without waiting for completion. */
+		/** Starts one message delivery without waiting for completion. */
 		send(name: string, id: string, options: AgentPromptOptions): Promise<AgentSendResult>;
+		/**
+		 * Awaits the admitted submission's completion. Resolves void when it
+		 * settles completed and throws `FlueExecutionError` when it settles
+		 * failed or aborted. The agent's reply is not returned here — read it
+		 * from the conversation via `onEvent` chunks, `observe()`, or `history()`.
+		 */
 		wait(admission: AgentSendResult, options?: AgentWaitOptions): Promise<void>;
 		/**
 		 * Aborts all in-flight and queued durable work for an agent instance

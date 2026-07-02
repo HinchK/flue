@@ -41,28 +41,28 @@ function flue(): Hono;
 
 Creates a mountable Hono sub-app for Flue's public HTTP API. Routes are relative to the application-chosen mount prefix.
 
-| Route                    | Purpose                                                                                  |
-| ------------------------ | ---------------------------------------------------------------------------------------- |
-| `POST /agents/:name/:id` | Start a prompt on an HTTP-exposed agent instance; returns `202` with stream coordinates. |
-| `POST /agents/:name/:id/abort` | Abort the instance's in-flight and queued durable work; returns `200 { aborted }`. |
-| `GET /agents/:name/:id`  | Read materialized history or projected updates.                                          |
-| `HEAD /agents/:name/:id` | Return canonical conversation-stream metadata.                                           |
-| `POST /workflows/:name`  | Start an HTTP-exposed workflow run.                                                      |
-| `GET /runs/:runId`       | Stream workflow-run events via the Durable Streams protocol.                             |
-| `GET /runs/:runId?meta`  | Retrieve the workflow-run record as plain JSON.                                          |
-| `HEAD /runs/:runId`      | Return run stream metadata (tail offset, closed status).                                 |
-| `* /channels/:name/*`    | Serve method- and suffix-specific discovered channel handlers.                           |
+| Route                          | Purpose                                                                                  |
+| ------------------------------ | ---------------------------------------------------------------------------------------- |
+| `POST /agents/:name/:id`       | Start a prompt on an HTTP-exposed agent instance; returns `202` with stream coordinates. |
+| `POST /agents/:name/:id/abort` | Abort the instance's in-flight and queued durable work; returns `200 { aborted }`.       |
+| `GET /agents/:name/:id`        | Read materialized history or projected updates.                                          |
+| `HEAD /agents/:name/:id`       | Return canonical conversation-stream metadata.                                           |
+| `POST /workflows/:name`        | Start an HTTP-exposed workflow run.                                                      |
+| `GET /runs/:runId`             | Stream workflow-run events via the Durable Streams protocol.                             |
+| `GET /runs/:runId?meta`        | Retrieve the workflow-run record as plain JSON.                                          |
+| `HEAD /runs/:runId`            | Return run stream metadata (tail offset, closed status).                                 |
+| `* /channels/:name/*`          | Serve method- and suffix-specific discovered channel handlers.                           |
 
 Agent routes and workflow invocation routes are available only when the corresponding module exports `route`. A workflow's existing run resources are available only when its module separately exports `runs`. Discovered channel files export a named `channel` binding whose provider-declared routes are always mounted beneath `/channels/<filename>`. Direct agent prompts and dispatched agent inputs are not runs.
 
-`POST /agents/:name/:id` accepts a JSON body of `{ message, images? }`: a required `message` string and an optional `images` array of `{ type: 'image', data, mimeType }` attachments, where `data` is base64-encoded image content (capped at 14 MiB of base64 characters per image) for vision-capable models. The prompt field is `message`, not `prompt`. `POST /workflows/:name` accepts the workflow input as its JSON body.
+`POST /agents/:name/:id` accepts a [`DeliveredMessage`](/docs/api/agent-api/#deliveredmessage) as its JSON body — the same unified shape `dispatch()` admits. A chat turn is `{ "kind": "user", "body": string, "attachments"?: attachment[] }` with optional `{ type: 'image', data, mimeType, filename? }` attachments, where `data` is base64-encoded image content (capped at 14 MiB of base64 characters per image) for vision-capable models. A structured event is `{ "kind": "signal", "type": string, "body": string, "attributes"?, "tagName"? }`. `POST /workflows/:name` accepts the workflow input as its JSON body.
 
 ```bash
 # Start a prompt on an HTTP-exposed agent instance.
 # :name is the agent module name; :id is any instance id you choose.
 curl -X POST http://localhost:3583/agents/assistant/main \
   -H 'Content-Type: application/json' \
-  -d '{ "message": "Summarize the open issues." }'
+  -d '{ "kind": "user", "body": "Summarize the open issues." }'
 # → 202 { "streamUrl": "...", "offset": "...", "submissionId": "..." }
 ```
 

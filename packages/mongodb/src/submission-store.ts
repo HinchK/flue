@@ -3,8 +3,7 @@ import type {
 	AgentDispatchAdmission,
 	AgentSubmission,
 	AgentSubmissionStore,
-	DirectAgentSubmissionInput,
-	DispatchAgentSubmissionInput,
+	AgentSubmissionInput,
 	DispatchInput,
 	SubmissionAttemptRef,
 	SubmissionClaimRef,
@@ -60,9 +59,7 @@ export class MongoSubmissionStore implements AgentSubmissionStore {
 			{ status: 'queued', canonicalReadyAt: null },
 			{ sort: { sequence: 1 } },
 		);
-		const output: AgentSubmission[] = [];
-		for (const row of rows) output.push(await this.parseSubmission(row));
-		return output;
+		return this.parseOperationalRows(rows, 'queued');
 	}
 
 	async listRunnableSubmissions(): Promise<AgentSubmission[]> {
@@ -71,21 +68,18 @@ export class MongoSubmissionStore implements AgentSubmissionStore {
 			{ sort: { sequence: 1 } },
 		);
 		const seen = new Set<string>();
-		const output: AgentSubmission[] = [];
+		const heads: MongoDocument[] = [];
 		for (const row of rows)
 			if (!seen.has(String(row.sessionKey))) {
 				seen.add(String(row.sessionKey));
-				if (row.status === 'queued' && row.canonicalReadyAt != null)
-					output.push(await this.parseSubmission(row));
+				if (row.status === 'queued' && row.canonicalReadyAt != null) heads.push(row);
 			}
-		return output;
+		return this.parseOperationalRows(heads, 'queued');
 	}
 
 	async listRunningSubmissions(): Promise<AgentSubmission[]> {
 		const rows = await this.c('submissions').find({ status: 'running' }, { sort: { sequence: 1 } });
-		const output: AgentSubmission[] = [];
-		for (const row of rows) output.push(await this.parseSubmission(row));
-		return output;
+		return this.parseOperationalRows(rows, 'active');
 	}
 
 	async replaceSubmissionAttempt(
@@ -114,7 +108,7 @@ export class MongoSubmissionStore implements AgentSubmissionStore {
 	admitDispatch(input: DispatchInput): Promise<AgentDispatchAdmission> {
 		return this.admit(createDispatchAgentSubmissionInput(input));
 	}
-	async admitDirect(input: DirectAgentSubmissionInput): Promise<AgentSubmission> {
+	async admitDirect(input: AgentSubmissionInput): Promise<AgentSubmission> {
 		const result = await this.admit(input);
 		if (result.kind !== 'submission') throw new TypeError('Direct admission conflicted.');
 		return result.submission;
@@ -290,10 +284,10 @@ export class MongoSubmissionStore implements AgentSubmissionStore {
 			{ status: 'running', leaseExpiresAt: { $gt: 0, $lt: Date.now() } },
 			{ sort: { sequence: 1 } },
 		);
-		return Promise.all(rows.map((row) => this.parseSubmission(row)));
+		return this.parseOperationalRows(rows, 'active');
 	}
 	private async admit(
-		input: DispatchAgentSubmissionInput | DirectAgentSubmissionInput,
+		input: AgentSubmissionInput,
 	): Promise<AgentDispatchAdmission> {
 		const prepared = prepareSubmissionAttachments(input);
 		const pointer = await this.values.stage(`submission:${input.submissionId}`, prepared.value);
@@ -354,7 +348,7 @@ export class MongoSubmissionStore implements AgentSubmissionStore {
 				if (
 					!matchesPersistedSubmissionAttachments(
 						input,
-						persisted as DirectAgentSubmissionInput | DispatchAgentSubmissionInput,
+						persisted as AgentSubmissionInput,
 						chunks,
 					)
 				)
@@ -368,6 +362,46 @@ export class MongoSubmissionStore implements AgentSubmissionStore {
 			}
 			throw error;
 		}
+	}
+
+	/**
+	 * Parse each operational row, terminalizing any row whose persisted value
+	 * is malformed (fail → settled) so one bad row cannot wedge the store —
+	 * the same per-row isolation the SQL backends implement.
+	 */
+	private async parseOperationalRows(
+		rows: MongoDocument[],
+		status: 'queued' | 'active',
+	): Promise<AgentSubmission[]> {
+		const output: AgentSubmission[] = [];
+		for (const row of rows) {
+			try {
+				output.push(await this.parseSubmission(row));
+			} catch (error) {
+				const sequence = Number(row.sequence);
+				if (!Number.isFinite(sequence)) throw error;
+				console.error('[flue] Terminating malformed submission (sequence %d):', sequence, error);
+				await this.failSubmissionSequence(sequence, status, error);
+			}
+		}
+		return output;
+	}
+
+	private async failSubmissionSequence(
+		sequence: number,
+		status: 'queued' | 'active',
+		error: unknown,
+	): Promise<void> {
+		await this.c('submissions').updateOne(
+			{ sequence, status: status === 'queued' ? 'queued' : 'running' },
+			{
+				$set: {
+					status: 'settled',
+					settledAt: Date.now(),
+					error: error instanceof Error ? error.message : String(error),
+				},
+			},
+		);
 	}
 
 	private async lifecycle(
@@ -397,7 +431,7 @@ export class MongoSubmissionStore implements AgentSubmissionStore {
 				>[1])
 			: [];
 		const input = hydratePersistedSubmissionAttachments(
-			persisted as DirectAgentSubmissionInput | DispatchAgentSubmissionInput,
+			persisted as AgentSubmissionInput,
 			chunks,
 		);
 		if (

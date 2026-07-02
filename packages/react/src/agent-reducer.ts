@@ -1,5 +1,5 @@
 import type {
-	AgentPromptImage,
+	DeliveredAttachment,
 	FlueConversationMessage,
 	FlueConversationState,
 } from '@flue/sdk';
@@ -65,7 +65,7 @@ export const emptyAgentState: AgentState = {
 };
 
 export type AgentReducerEvent =
-	| { type: 'local_send_submitted'; localId: string; message: string; images?: AgentPromptImage[] }
+	| { type: 'local_send_submitted'; localId: string; message: string; images?: DeliveredAttachment[] }
 	| { type: 'local_send_admitted'; localId: string; submissionId: string }
 	| { type: 'local_send_failed'; localId: string; error: Error }
 	| {

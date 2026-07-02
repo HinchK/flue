@@ -7,8 +7,10 @@ import type { FlueContextInternal } from '../client.ts';
 import { ConversationRecordWriter } from '../conversation-writer.ts';
 import type { FlueTraceCarrier } from '../execution-interceptor.ts';
 import {
+	agentSubmissionDispatchId,
 	type createAgentSubmissionSessionHandler,
 	createDirectAgentSubmissionInput,
+	createDispatchAgentSubmissionInput,
 	materializeAgentSubmissionSession,
 	processSubmission,
 	reconcileInterruptedSubmission,
@@ -270,8 +272,8 @@ class CloudflareAgentCoordinator {
 			request,
 			id: this.instance.name,
 			agentName: this.agentName,
-			admitAttachedSubmission: (payload, traceCarrier) =>
-				this.admitAttachedSubmission(payload, traceCarrier),
+			admitAttachedSubmission: (message, traceCarrier) =>
+				this.admitAttachedSubmission(message, traceCarrier),
 		});
 	}
 
@@ -652,7 +654,7 @@ class CloudflareAgentCoordinator {
 			await this.ensureConversationWriter();
 			const ctx = this.createDurableContext(
 				submissionSyntheticRequest(input),
-				input.kind === 'dispatch' ? input.dispatchId : undefined,
+				agentSubmissionDispatchId(input),
 			);
 			await materializeAgentSubmissionSession(ctx, agent, input, this.prepared.attachmentStore);
 		});
@@ -737,10 +739,7 @@ class CloudflareAgentCoordinator {
 			return new Response('Conflicting internal dispatch replay.', { status: 409 });
 		}
 		if (admission.submission.canonicalReadyAt === null) {
-			await this.materializeSubmissionConversation(
-				{ ...input, kind: 'dispatch', submissionId: input.dispatchId },
-				agent,
-			);
+			await this.materializeSubmissionConversation(createDispatchAgentSubmissionInput(input), agent);
 			const ready = await this.submissions.markSubmissionCanonicalReady(input.dispatchId);
 			if (!ready) throw new Error('[flue] Dispatch admission disappeared before canonical readiness.');
 		}

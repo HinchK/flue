@@ -1,5 +1,5 @@
 import type {
-	AgentPromptImage,
+	DeliveredAttachment,
 	ConversationStreamChunk,
 	FlueClient,
 	FlueEvent,
@@ -52,7 +52,7 @@ export interface ConsoleController {
 
 interface AgentInput {
 	message: string;
-	images?: AgentPromptImage[];
+	images?: DeliveredAttachment[];
 }
 
 type ExecutionTarget =
@@ -222,7 +222,14 @@ export function createConsoleController(options: ConsoleControllerOptions): Cons
 	): Promise<{ kind: 'agent' }> {
 		const admission = admissionQueue.then(() => {
 			signal.throwIfAborted();
-			return options.client.agents.send(target.name, target.instanceId, { ...target.input, signal });
+			return options.client.agents.send(target.name, target.instanceId, {
+				message: {
+					kind: 'user',
+					body: target.input.message,
+					...(target.input.images?.length ? { attachments: target.input.images } : {}),
+				},
+				signal,
+			});
 		});
 		admissionQueue = admission.then(() => undefined, () => undefined);
 		const admitted = await admission;
@@ -260,7 +267,7 @@ function parseAgentInput(value: unknown): AgentInput {
 		: { message: value.message, images: value.images };
 }
 
-function isAgentImages(value: unknown): value is AgentPromptImage[] {
+function isAgentImages(value: unknown): value is DeliveredAttachment[] {
 	return Array.isArray(value) && value.every((image) =>
 		isRecord(image)
 		&& image.type === 'image'

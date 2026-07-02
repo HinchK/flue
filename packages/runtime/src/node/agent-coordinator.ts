@@ -8,6 +8,7 @@ import { ConversationRecordWriter } from '../conversation-writer.ts';
 import {
 	type AgentSubmissionInput,
 	type AttachedAgentSubmissionAdmission,
+	agentSubmissionDispatchId,
 	createDirectAgentSubmissionInput,
 	createDispatchAgentSubmissionInput,
 	materializeAgentSubmissionSession,
@@ -221,9 +222,7 @@ export function createNodeAgentCoordinator(options: {
 		const previous = conversationMaterializations.get(path) ?? Promise.resolve();
 		const materialized = previous.then(async () => {
 			const writer = await getConversationWriter(input);
-			const ctx = makeSubmissionContext(input, writer)(
-				input.kind === 'dispatch' ? input.dispatchId : undefined,
-			);
+			const ctx = makeSubmissionContext(input, writer)(agentSubmissionDispatchId(input));
 			await materializeAgentSubmissionSession(ctx, agent, input, attachmentStore);
 		});
 		conversationMaterializations.set(path, materialized);

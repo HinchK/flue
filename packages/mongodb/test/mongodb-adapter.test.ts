@@ -302,6 +302,37 @@ describeMongo('mongodb() integration', () => {
 		await first.adapter.close?.();
 		await second.close?.();
 	});
+	it('terminalizes a malformed submission row instead of wedging list calls', async () => {
+		const value = await stores();
+		const submissions = value.executionStore.submissions;
+		const admit = async (dispatchId: string, id: string) => {
+			await submissions.admitDispatch({
+				dispatchId,
+				agent: 'a',
+				id,
+				message: { kind: 'signal', type: 'test.event', body: 'go' },
+				acceptedAt: '2026-06-03T00:00:00.000Z',
+			});
+			await submissions.markSubmissionCanonicalReady(dispatchId);
+		};
+		await admit('malformed', 'session-a');
+		await admit('healthy', 'session-b');
+		if (!harness) throw new TypeError('Harness is required.');
+		// Corrupt persisted metadata so the row no longer matches its payload.
+		await harness.db
+			.collection('flue_submissions')
+			.updateOne({ submissionId: 'malformed' }, { $set: { acceptedAt: 1 } });
+		const runnable = await submissions.listRunnableSubmissions();
+		expect(runnable.map((item) => item.submissionId)).toEqual(['healthy']);
+		expect(
+			await harness.db.collection('flue_submissions').findOne({ submissionId: 'malformed' }),
+		).toMatchObject({ status: 'settled', error: expect.stringContaining('malformed') });
+		// A later pass must not resurrect or re-report the terminalized row.
+		expect((await submissions.listRunnableSubmissions()).map((item) => item.submissionId)).toEqual([
+			'healthy',
+		]);
+		await cleanup();
+	});
 	it('orders concurrent event appends and rejects append after close', async () => {
 		const value = await stores();
 		await value.eventStreamStore.createStream('x');

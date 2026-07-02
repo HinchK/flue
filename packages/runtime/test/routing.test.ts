@@ -216,6 +216,7 @@ describe('flue()', () => {
 			agents: [agentRecord('assistant', { route: async (_c, next) => next() })],
 			createAgentAdmission: (_agentName, _id) => async (_payload) => ({
 					submissionId: 'submission-1',
+					offset: '-1',
 				}),
 			createWorkflowContext: createTestContext,
 			eventStreamStore: createTestEventStreamStore(),
@@ -227,7 +228,7 @@ describe('flue()', () => {
 			new Request('http://localhost/api/agents/assistant/customer-123', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ message: 'hello' }),
+				body: JSON.stringify({ kind: 'user', body: 'hello' }),
 			}),
 		);
 
@@ -244,14 +245,14 @@ describe('flue()', () => {
 		expect(response.headers.get('stream-next-offset')).toBe('-1');
 	});
 
-	it('accepts direct agent images and maps them onto a DeliveredMessage', async () => {
+	it('accepts attachments on the DeliveredMessage wire body', async () => {
 		let delivered: unknown;
 		configureFlueRuntime(nodeRuntime({
 			target: 'node',
 			agents: [agentRecord('assistant', { route: async (_c, next) => next() })],
 			createAgentAdmission: (_agentName, ) => async (message) => {
 				delivered = message;
-				return { submissionId: 'submission-1' };
+				return { submissionId: 'submission-1', offset: '-1' };
 			},
 			createWorkflowContext: createTestContext,
 			eventStreamStore: createTestEventStreamStore(),
@@ -263,8 +264,9 @@ describe('flue()', () => {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({
-					message: 'hello',
-					images: [{ type: 'image', data: 'YWJj', mimeType: 'image/png', ignored: true }],
+					kind: 'user',
+					body: 'hello',
+					attachments: [{ type: 'image', data: 'YWJj', mimeType: 'image/png', ignored: true }],
 					ignored: true,
 				}),
 			}),
@@ -283,6 +285,7 @@ describe('flue()', () => {
 			agents: [agentRecord('assistant', { route: async (_c, next) => next() })],
 			createAgentAdmission: (_agentName, _id) => async (_payload) => ({
 				submissionId: 'submission-1',
+				offset: '-1',
 			}),
 			createWorkflowContext: createTestContext,
 			eventStreamStore: createTestEventStreamStore(),
@@ -294,7 +297,7 @@ describe('flue()', () => {
 			new Request('http://localhost/api/agents/assistant/customer-123?wait=result', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ message: 'hello' }),
+				body: JSON.stringify({ kind: 'user', body: 'hello' }),
 			}),
 		);
 
@@ -329,7 +332,7 @@ describe('flue()', () => {
 				new Request('http://localhost/api/agents/assistant/customer-123', {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify({ message: 'hello' }),
+					body: JSON.stringify({ kind: 'user', body: 'hello' }),
 				}),
 			);
 
@@ -395,7 +398,7 @@ describe('flue()', () => {
 				new Request('http://localhost/api/agents/assistant/customer-123', {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify({ message: 'hello' }),
+					body: JSON.stringify({ kind: 'user', body: 'hello' }),
 				}),
 			);
 			expect(prompt.status).toBe(500);
@@ -522,6 +525,7 @@ describe('flue()', () => {
 			],
 			createAgentAdmission: (_agentName, _id) => async (_payload) => ({
 				submissionId: 'submission-1',
+				offset: '-1',
 			}),
 			createWorkflowContext: createTestContext,
 			eventStreamStore: createTestEventStreamStore(),
@@ -533,7 +537,7 @@ describe('flue()', () => {
 			new Request('http://localhost/api/agents/assistant/customer-123', {
 				method: 'POST',
 				headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
-				body: JSON.stringify({ message: 'hello' }),
+				body: JSON.stringify({ kind: 'user', body: 'hello' }),
 			}),
 		);
 
@@ -777,7 +781,7 @@ describe('flue()', () => {
 			new Request('http://localhost/api/agents/assistant/customer-123', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ message: 'hello' }),
+				body: JSON.stringify({ kind: 'user', body: 'hello' }),
 			}),
 		);
 
@@ -803,7 +807,7 @@ describe('flue()', () => {
 				new Request('http://localhost/api/agents/assistant/customer-123', {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify({ message: 'hello' }),
+					body: JSON.stringify({ kind: 'user', body: 'hello' }),
 				}),
 			);
 
@@ -831,6 +835,7 @@ describe('flue()', () => {
 			agents: [agentRecord('assistant', { route: async (_c, next) => next() })],
 			createAgentAdmission: (_agentName, _id) => async (_payload) => ({
 					submissionId: 'submission-1',
+					offset: '-1',
 				}),
 			createWorkflowContext: createTestContext,
 			eventStreamStore: createTestEventStreamStore(),
@@ -863,6 +868,7 @@ describe('flue()', () => {
 			agents: [agentRecord('assistant', { route: async (_c, next) => next() })],
 			createAgentAdmission: (_agentName, _id) => async (_payload) => ({
 					submissionId: 'submission-1',
+					offset: '-1',
 				}),
 			createWorkflowContext: createTestContext,
 			eventStreamStore: createTestEventStreamStore(),
@@ -922,12 +928,13 @@ describe('flue()', () => {
 		});
 	});
 
-	it('rejects a direct agent body when it does not contain a string message', async () => {
+	it('rejects a direct agent body that is not a DeliveredMessage', async () => {
 		configureFlueRuntime(nodeRuntime({
 			target: 'node',
 			agents: [agentRecord('assistant', { route: async (_c, next) => next() })],
 			createAgentAdmission: (_agentName, _id) => async (_payload) => ({
 					submissionId: 'submission-1',
+					offset: '-1',
 				}),
 			createWorkflowContext: createTestContext,
 			eventStreamStore: createTestEventStreamStore(),
@@ -949,16 +956,17 @@ describe('flue()', () => {
 				type: 'invalid_request',
 				message: 'Request is malformed.',
 				details:
-					'Direct agent requests must use JSON object body { "message": string, "images"?: image[] }.',
+					'Delivered messages must be { kind: "user", body: string, attachments?: attachment[] } ' +
+					'or { kind: "signal", type: string, body: string, attributes?: Record<string, string>, tagName?: string }.',
 			},
 		});
 	});
 
-	it('rejects a direct agent image above the encoded length limit', async () => {
+	it('rejects a direct agent attachment above the encoded length limit', async () => {
 		configureFlueRuntime(nodeRuntime({
 			target: 'node',
 			agents: [agentRecord('assistant', { route: async (_c, next) => next() })],
-			createAgentAdmission: (_agentName, ) => async (_payload) => ({ submissionId: 'submission-1' }),
+			createAgentAdmission: (_agentName, ) => async (_payload) => ({ submissionId: 'submission-1', offset: '-1' }),
 			createWorkflowContext: createTestContext,
 			eventStreamStore: createTestEventStreamStore(),
 		}));
@@ -970,8 +978,9 @@ describe('flue()', () => {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({
-					message: 'hello',
-					images: [
+					kind: 'user',
+					body: 'hello',
+					attachments: [
 						{
 							type: 'image',
 							data: 'a'.repeat(MAX_IMAGE_DATA_LENGTH + 1),
@@ -1010,6 +1019,7 @@ describe('flue()', () => {
 			],
 			createAgentAdmission: (_agentName, _id) => async () => ({
 				submissionId: 'submission-1',
+				offset: '-1',
 			}),
 			createWorkflowContext: createTestContext,
 		}));
@@ -1024,7 +1034,7 @@ describe('flue()', () => {
 			new Request('http://localhost/api/agents/assistant/customer-123', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ message: 'hello' }),
+				body: JSON.stringify({ kind: 'user', body: 'hello' }),
 			}),
 		);
 		const workflowResponse = await app.fetch(
@@ -1074,6 +1084,7 @@ describe('createDefaultFlueApp()', () => {
 			agents: [agentRecord('assistant', { route: async (_c, next) => next() })],
 			createAgentAdmission: (_agentName, _id) => async (_payload) => ({
 					submissionId: 'submission-1',
+					offset: '-1',
 				}),
 			createWorkflowContext: createTestContext,
 			eventStreamStore: createTestEventStreamStore(),
@@ -1084,7 +1095,7 @@ describe('createDefaultFlueApp()', () => {
 			new Request('http://localhost/agents/assistant/customer-123', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ message: 'hello' }),
+				body: JSON.stringify({ kind: 'user', body: 'hello' }),
 			}),
 		);
 

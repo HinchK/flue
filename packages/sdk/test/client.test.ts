@@ -25,7 +25,7 @@ describe('createFlueClient', () => {
 			try {
 				const client = createFlueClient({ baseUrl: 'https://flue.test' });
 				await expect(
-					client.agents.send('hello', 'inst-1', { message: 'hi' }),
+					client.agents.send('hello', 'inst-1', { message: { kind: 'user', body: 'hi' } }),
 				).resolves.toEqual({ streamUrl: 'https://flue.test/stream', offset: '-1', submissionId: 's1' });
 				expect(calledWithCorrectReceiver).toBe(true);
 			} finally {
@@ -35,7 +35,7 @@ describe('createFlueClient', () => {
 	});
 
 	describe('agents.send()', () => {
-		it('sends images in the accepted prompt body', async () => {
+		it('sends the DeliveredMessage as the wire body', async () => {
 			const seen: Request[] = [];
 			const client = createFlueClient({
 				baseUrl: 'https://flue.test',
@@ -45,12 +45,16 @@ describe('createFlueClient', () => {
 				},
 			});
 			await client.agents.send('hello', 'inst-1', {
-				message: 'Hello',
-				images: [{ type: 'image', data: 'YWJj', mimeType: 'image/png' }],
+				message: {
+					kind: 'user',
+					body: 'Hello',
+					attachments: [{ type: 'image', data: 'YWJj', mimeType: 'image/png' }],
+				},
 			});
 			expect(await seen[0]?.json()).toEqual({
-				message: 'Hello',
-				images: [{ type: 'image', data: 'YWJj', mimeType: 'image/png' }],
+				kind: 'user',
+				body: 'Hello',
+				attachments: [{ type: 'image', data: 'YWJj', mimeType: 'image/png' }],
 			});
 		});
 	});
@@ -533,6 +537,42 @@ describe('createFlueClient', () => {
 				error: { name: 'Error', message: 'model unavailable' },
 			});
 		});
+
+		it('classifies an aborted settlement distinctly from a failure', async () => {
+			const client = createFlueClient({
+				baseUrl: 'https://flue.test',
+				fetch: async () =>
+					dsJsonResponse(
+						[
+							{
+								type: 'submission-settled',
+								conversationId: 'c1',
+								submissionId: 'submission-1',
+								outcome: 'aborted',
+								error: { name: 'SubmissionAbortedError', message: 'Submission was aborted.' },
+								position: { batch: 1, index: 0 },
+							},
+						] satisfies ConversationStreamChunk[],
+						{ closed: true },
+					),
+			});
+
+			const error = await client.agents
+				.wait({
+					streamUrl: 'https://flue.test/agents/hello/instance-1',
+					offset: 'admission-offset',
+					submissionId: 'submission-1',
+				})
+				.catch((error: unknown) => error);
+
+			expect(error).toMatchObject({
+				name: 'FlueExecutionError',
+				target: 'agent_submission',
+				targetId: 'submission-1',
+				failure: 'aborted',
+			});
+			expect((error as Error).message).toContain('was aborted');
+		});
 	});
 
 	describe('workflows.run()', () => {
@@ -641,7 +681,7 @@ describe('createFlueClient', () => {
 				},
 			});
 
-			await client.agents.send('hello', 'inst-1', { message: 'Hello' });
+			await client.agents.send('hello', 'inst-1', { message: { kind: 'user', body: 'Hello' } });
 			await client.runs.get('run-1');
 
 			expect(requests.map(({ url }) => new URL(url).pathname)).toEqual([

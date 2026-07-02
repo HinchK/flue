@@ -151,7 +151,6 @@ import type {
 	SessionToolFactory,
 	ShellOptions,
 	ShellResult,
-	SignalMessage,
 	SkillOptions,
 	SkillReference,
 	TaskOptions,
@@ -1044,7 +1043,7 @@ export class Session implements FlueSession, AgentSubmissionSession {
 	processSubmissionInput(
 		input: AgentSubmissionInput,
 		options?: ProcessAgentSubmissionOptions,
-	): CallHandle<PromptResponse> {
+	): CallHandle<void> {
 		return createCallHandle(undefined, (signal) =>
 			this.runOperation('prompt', signal, () =>
 				this.runPersistedSubmissionInput(input, signal, options),
@@ -1416,11 +1415,6 @@ export class Session implements FlueSession, AgentSubmissionSession {
 	}
 
 	async recordSubmissionTerminal(input: AgentSubmissionInterruption): Promise<void> {
-		let body = input.message;
-		if (input.interruptedTools && input.interruptedTools.length > 0) {
-			const toolList = input.interruptedTools.map((t) => `  - ${t.name} (${t.id})`).join('\n');
-			body += `\n\nInterrupted tool call(s):\n${toolList}`;
-		}
 		{
 			const aborted = input.reason === 'aborted';
 			const signalType = aborted ? 'submission_aborted' : 'submission_interrupted';
@@ -1434,7 +1428,7 @@ export class Session implements FlueSession, AgentSubmissionSession {
 				messageId: `entry_${slug}_${input.submissionId}`,
 				parentId,
 				signalType,
-				content: body,
+				content: input.message,
 				attributes: {
 					submissionId: input.submissionId,
 					kind: input.kind,
@@ -2970,9 +2964,7 @@ export class Session implements FlueSession, AgentSubmissionSession {
 	}
 
 	private canonicalInputEntryId(input: AgentSubmissionInput): string {
-		return input.kind === 'dispatch'
-			? submissionEntryId('dispatch', input.dispatchId)
-			: submissionEntryId('direct', input.submissionId);
+		return submissionEntryId(input.kind, input.submissionId);
 	}
 
 	private inspectCanonicalState(state: ReturnType<typeof classifyConversationSubmission>): AgentSubmissionInspection {
@@ -3006,7 +2998,7 @@ export class Session implements FlueSession, AgentSubmissionSession {
 		input: AgentSubmissionInput,
 		signal: AbortSignal,
 		options?: ProcessAgentSubmissionOptions,
-	): Promise<PromptResponse> {
+	): Promise<void> {
 		const message = input.message;
 		this.activeAgentInput =
 			message.kind === 'user'
@@ -3056,7 +3048,7 @@ export class Session implements FlueSession, AgentSubmissionSession {
 					type: 'signal',
 					messageId,
 					parentId,
-					...(input.kind === 'dispatch' ? { dispatchId: input.dispatchId } : {}),
+					...(input.kind === 'dispatch' ? { dispatchId: input.submissionId } : {}),
 					signalType: message.type,
 					...(message.tagName ? { tagName: message.tagName } : {}),
 					content: message.body,
@@ -3239,14 +3231,14 @@ export class Session implements FlueSession, AgentSubmissionSession {
 		onInputApplied?: (durability: SubmissionDurability) => Promise<void> | void;
 		submissionAttempt?: import('./agent-execution-store.ts').SubmissionAttemptRef;
 		signal: AbortSignal;
-	}): Promise<PromptResponse> {
+	}): Promise<void> {
 		return this.withCallOverrides(
 			{
 				tools: [],
 				model: undefined,
 				thinkingLevel: undefined,
 			},
-			async ({ resolvedModel }) => {
+			async () => {
 				this.activeSubmissionId = options.submissionAttempt?.submissionId;
 				this.activeSubmissionAttemptId = options.submissionAttempt?.attemptId;
 				const durability = this.resolveSubmissionDurability(options.startedAt, options.timeoutAt);
@@ -3267,11 +3259,6 @@ export class Session implements FlueSession, AgentSubmissionSession {
 						errorLabel: options.errorLabel,
 						signal: options.signal,
 					});
-					return {
-						text: this.getAssistantText(),
-						usage: await this.aggregateCanonicalUsageSince(options.inputEntryId),
-						model: { provider: resolvedModel.provider, id: resolvedModel.id },
-					};
 				} finally {
 					this.activeSubmissionId = undefined;
 					this.activeSubmissionAttemptId = undefined;

@@ -1,4 +1,4 @@
-import { PersistedSchemaVersionError } from '@flue/runtime/adapter';
+import { createSessionStorageKey, PersistedSchemaVersionError } from '@flue/runtime/adapter';
 import { describe, expect, it } from 'vitest';
 import {
 	type MongoCollection,
@@ -249,6 +249,86 @@ describe('MongoSubmissionStore update semantics', () => {
 		]);
 		expect(updates[1]).toEqual([
 			{ $set: { recoveryRequestedAt: { $ifNull: ['$recoveryRequestedAt', expect.any(Number)] } } },
+		]);
+	});
+});
+
+describe('MongoSubmissionStore malformed rows', () => {
+	it('terminalizes a malformed row and keeps listing the rest', async () => {
+		const acceptedAt = '2026-06-03T00:00:00.000Z';
+		const healthyInput = {
+			kind: 'dispatch',
+			submissionId: 'healthy',
+			agent: 'assistant',
+			id: 'agent-1',
+			message: { kind: 'signal', type: 'test.event', body: 'go' },
+			acceptedAt,
+		};
+		const row = (submissionId: string, sequence: number) => ({
+			_id: submissionId,
+			submissionId,
+			sessionKey: createSessionStorageKey('agent-1', 'default', 'default'),
+			kind: 'dispatch',
+			payload: { owner: `submission:${submissionId}`, generation: `g-${submissionId}`, count: 1 },
+			status: 'running',
+			canonicalReadyAt: 1,
+			acceptedAt: Date.parse(acceptedAt),
+			sequence,
+			attemptId: 'attempt-1',
+			startedAt: 2,
+			attemptCount: 1,
+			maxRetry: 10,
+			timeoutAt: 3,
+			leaseExpiresAt: 0,
+		});
+		// 'malformed' has no persisted value parts, so its payload read throws.
+		const valueParts = [
+			{
+				owner: 'submission:healthy',
+				generation: 'g-healthy',
+				index: 0,
+				count: 1,
+				data: JSON.stringify([healthyInput]),
+			},
+		];
+		const updates: Array<{ filter: unknown; update: unknown }> = [];
+		const submissions = collection({
+			find: async () => [row('malformed', 1), row('healthy', 2)],
+			updateOne: async (filter, update) => {
+				updates.push({ filter, update });
+				return result();
+			},
+		});
+		const values = collection({
+			find: async (filter = {}) =>
+				valueParts.filter(
+					(part) => part.owner === filter.owner && part.generation === filter.generation,
+				),
+		});
+		const store = new MongoSubmissionStore(
+			runner({
+				collection: (name) =>
+					name.endsWith('submissions')
+						? submissions
+						: name.endsWith('values')
+							? values
+							: collection(),
+			}),
+			'flue_',
+		);
+		const running = await store.listRunningSubmissions();
+		expect(running.map((submission) => submission.submissionId)).toEqual(['healthy']);
+		expect(updates).toEqual([
+			{
+				filter: { sequence: 1, status: 'running' },
+				update: {
+					$set: {
+						status: 'settled',
+						settledAt: expect.any(Number),
+						error: expect.stringContaining('incomplete'),
+					},
+				},
+			},
 		]);
 	});
 });
