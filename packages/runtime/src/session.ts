@@ -4938,7 +4938,7 @@ export class Session implements FlueSession, AgentSubmissionSession {
 
 			if (overflow && assistant !== undefined) {
 				overflowRecoveryAttempted = true;
-				this.internalLog('info', '[flue:compaction] Overflow detected, compacting and retrying...');
+				this.internalLog('info', '[flue:compaction] Overflow detected, compacting...');
 				await this.rebuildCanonicalContext();
 				if (!(await this.runCompaction('overflow'))) {
 					if (!turnCompleted && options.resume) {
@@ -4949,6 +4949,10 @@ export class Session implements FlueSession, AgentSubmissionSession {
 					}
 					return;
 				}
+				// A completed assistant remains the canonical leaf after rebuilding,
+				// so it cannot be continued. Preserve its response and the compaction
+				// for future turns; only provider errors need an immediate retry.
+				if (assistant.stopReason !== 'error') return;
 				this.internalLog('info', '[flue:compaction] Retrying after overflow recovery...');
 				start = continueRebuilt;
 			} else if (retryable && assistant !== undefined) {
@@ -5518,16 +5522,16 @@ export class Session implements FlueSession, AgentSubmissionSession {
 			case 'resume': {
 				// Divergence preserved from before consolidation (see
 				// submission-state.ts): a completed response flagged as silent
-				// overflow is compacted and continued here, while inspection
-				// reports it 'completed'. A completed-terminal-batch response
+				// overflow is compacted and settled here, while inspection reports
+				// it 'completed'. A completed-terminal-batch response
 				// (`terminalToolBatch`) always lands in this break — its trailing
 				// tool batch already ended the turn (live terminate semantics),
 				// so settlement proceeds with no further model call.
 				if (state.kind === 'completed' && !state.overflow) break;
 				// Recovery for the persisted trailing assistant (overflow
-				// compaction, transient-retry backoff) happens inside the turn
-				// loop, which evaluates the resume assistant before its first
-				// `continue()`.
+				// compaction — settling completed responses and retrying provider
+				// errors — or transient-retry backoff) happens inside the turn loop,
+				// which evaluates the resume assistant before any continuation.
 				await this.runModelTurnWithRecovery({
 					start: () => this.agentLoop.continue(),
 					signal: options.signal,
