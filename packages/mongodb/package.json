@@ -26,7 +26,6 @@
 	"scripts": {
 		"build": "tsdown",
 		"check:types": "tsc --noEmit",
-		"test": "vitest run",
 		"check:lint": "biome lint ."
 	},
 	"dependencies": {
