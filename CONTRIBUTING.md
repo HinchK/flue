@@ -61,3 +61,34 @@ Here, “junior” is relative to experience with the project and the problem be
 Flue does not have a formal co-lead today. We are still figuring out how to identify that person, how the role should work, and whether one co-lead is even the right model across every area of the project. For now, this describes the organization we are working toward rather than one we have already solved.
 
 This is the experiment behind how Flue is built: keep the team responsible for decisions small, use agents to increase what that team can execute, and make it easy for everyone else to contribute the information that guides those decisions.
+
+## Publishing
+
+Flue's public packages are versioned and published together. Before starting a release, confirm that the working tree is clean, update every public package to the release version, and add the release to `CHANGELOG.md`.
+
+Build the packages and prepare the documentation bundled with `@flue/cli`, `@flue/runtime`, and `@flue/sdk`:
+
+```sh
+pnpm run build && pnpm run build:docs
+```
+
+Always run both commands before publishing. Each of the three documentation packages also prepares its own docs automatically through a `prepack` lifecycle script. Package managers invoke `prepack` as part of `pack` and `publish`; maintainers do not run `prepack` directly. The lifecycle hook is a safety net, not a replacement for preparing and verifying the complete release first.
+
+Publish every public package from the repository root with pnpm:
+
+```sh
+pnpm -r publish --access public --no-git-checks
+```
+
+Do not use `npm publish`. pnpm replaces internal `workspace:` dependency specifiers with the release version while packing; npm can publish those specifiers unchanged and produce packages that cannot be installed outside this workspace. Complete npm's interactive authentication prompt when required. If publishing stops partway through, do not immediately rerun the command: first determine which versions reached the registry.
+
+After publishing, allow time for every package to become visible on the npm registry, then verify the release version and bundled documentation. Replace `<version>` below with the version just published:
+
+```sh
+npm view @flue/cli@<version> version
+npm view @flue/runtime@<version> version
+npm view @flue/sdk@<version> version
+pnpm dlx @flue/cli@<version> docs read guide/sandboxes
+```
+
+Check every published package for unresolved workspace dependency specifiers and confirm its `latest` dist-tag points to the release. Finally, download the published `@flue/cli`, `@flue/runtime`, and `@flue/sdk` packages into a clean temporary npm project and confirm that each package contains its `docs/` tree.

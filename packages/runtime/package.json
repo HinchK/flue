@@ -79,6 +79,7 @@
 	},
 	"scripts": {
 		"build": "tsdown",
+		"prepack": "node ../../scripts/build-docs.mjs runtime",
 		"check:types": "tsc --noEmit",
 		"test": "vitest run",
 		"test:watch": "vitest"

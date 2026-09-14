@@ -23,6 +23,7 @@
 	],
 	"scripts": {
 		"build": "tsdown",
+		"prepack": "node ../../scripts/build-docs.mjs sdk",
 		"check:types": "tsc --noEmit",
 		"test": "vitest run"
 	},

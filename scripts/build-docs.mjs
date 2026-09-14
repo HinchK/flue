@@ -6,11 +6,21 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const docsSource = join(repoRoot, 'apps/docs/src/content/docs');
-const docsTargets = [
-	join(repoRoot, 'packages/cli/docs'),
-	join(repoRoot, 'packages/runtime/docs'),
-	join(repoRoot, 'packages/sdk/docs'),
-];
+const docsTargets = new Map([
+	['cli', join(repoRoot, 'packages/cli/docs')],
+	['runtime', join(repoRoot, 'packages/runtime/docs')],
+	['sdk', join(repoRoot, 'packages/sdk/docs')],
+]);
+const requestedTargets = process.argv.slice(2);
+const targetNames = requestedTargets.length > 0 ? requestedTargets : [...docsTargets.keys()];
+
+for (const name of targetNames) {
+	if (!docsTargets.has(name)) {
+		throw new Error(
+			`Unknown documentation target: ${name}. Expected one of: ${[...docsTargets.keys()].join(', ')}`,
+		);
+	}
+}
 
 async function countFiles(root) {
 	let count = 0;
@@ -34,7 +44,8 @@ if (sourceFileCount === 0) {
 	throw new Error(`Documentation source directory is empty: ${docsSource}`);
 }
 
-for (const target of docsTargets) {
+for (const name of targetNames) {
+	const target = docsTargets.get(name);
 	await rm(target, { recursive: true, force: true });
 	await cp(docsSource, target, { recursive: true });
 
