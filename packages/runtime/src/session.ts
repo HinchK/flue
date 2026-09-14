@@ -2259,7 +2259,7 @@ export class Session implements FlueSession, AgentSubmissionSession {
 		});
 
 		this.eventCallback = options.onAgentEvent;
-		this.agentLoop.subscribe(async (event) => {
+		this.agentLoop.subscribe(async (event, signal) => {
 			switch (event.type) {
 				case 'agent_start':
 					this.emit({ type: 'agent_start' });
@@ -2622,6 +2622,9 @@ export class Session implements FlueSession, AgentSubmissionSession {
 				}
 				case 'turn_end': {
 					const turnId = this.activeTurnId ?? generateTurnId();
+					if (await this.completeAbortedPartialToolBatch(event.toolResults, signal)) {
+						throw abortErrorFor(signal);
+					}
 					const committedToolResults = event.toolResults.length > 0;
 					if (committedToolResults) {
 						const parentId = await this.conversationWriter.getConversationLeaf(this.conversationId);
@@ -2666,10 +2669,7 @@ export class Session implements FlueSession, AgentSubmissionSession {
 								outcomeIds,
 							},
 						]);
-						for (const toolResult of event.toolResults) {
-							this.pendingToolPublications.get(toolResult.toolCallId)?.();
-							this.pendingToolPublications.delete(toolResult.toolCallId);
-						}
+						this.publishPendingToolResults(event.toolResults);
 						this.lastCommittedToolBatch = {
 							assistantMessageId,
 							toolCallId: finalToolResult.toolCallId,
@@ -3385,6 +3385,80 @@ export class Session implements FlueSession, AgentSubmissionSession {
 	}
 
 	/**
+	 * Pi may stop a sequential tool batch after an abort, emitting only the
+	 * results completed before the signal reached the executor. Finish that
+	 * batch before the abort enters Pi's failure-assistant path: canonical tool
+	 * batches commit atomically, and a partial commit would leave the failure
+	 * assistant with no valid parent.
+	 */
+	private async completeAbortedPartialToolBatch(
+		toolResults: readonly ToolResultMessage[],
+		signal: AbortSignal,
+	): Promise<boolean> {
+		const assistantMessageId = this.canonicalToolRequestMessageId;
+		if (!signal.aborted || !assistantMessageId) return false;
+
+		const conversation = await this.requireConversation();
+		const request = conversation.entries.get(assistantMessageId);
+		if (
+			conversation.activeLeafId !== assistantMessageId ||
+			request?.type !== 'message' ||
+			request.submissionId !== this.activeSubmissionId ||
+			request.message.role !== 'assistant' ||
+			request.message.stopReason !== 'toolUse'
+		) {
+			return false;
+		}
+
+		const calls = request.message.content.filter((block) => block.type === 'toolCall');
+		if (
+			toolResults.length >= calls.length ||
+			!this.arePartialToolResultsPersistedInCallOrder(
+				assistantMessageId,
+				calls,
+				toolResults,
+				conversation,
+			)
+		) {
+			return false;
+		}
+
+		await this.settleTrailingToolBatch({ submissionId: this.activeSubmissionId });
+		// Writes buffered inside the interrupted batch did not reach its normal
+		// commit point and must not leak into Pi's failure-assistant turn.
+		this.hookState?.drain();
+		this.canonicalToolRequestMessageId = undefined;
+		this.lastCommittedToolBatch = undefined;
+		this.activeJoinSource = undefined;
+		this.activeJoinSignal = undefined;
+		this.publishPendingToolResults(toolResults);
+		return true;
+	}
+
+	private arePartialToolResultsPersistedInCallOrder(
+		assistantMessageId: string,
+		calls: ReadonlyArray<{ id: string; name: string }>,
+		results: readonly ToolResultMessage[],
+		conversation: ReducedConversationState,
+	): boolean {
+		return results.every((result, index) => {
+			const call = calls[index];
+			return (
+				call?.id === result.toolCallId &&
+				call.name === result.toolName &&
+				conversation.toolOutcomes.has(toolOutcomeKey(assistantMessageId, result.toolCallId))
+			);
+		});
+	}
+
+	private publishPendingToolResults(results: readonly ToolResultMessage[]): void {
+		for (const result of results) {
+			this.pendingToolPublications.get(result.toolCallId)?.();
+			this.pendingToolPublications.delete(result.toolCallId);
+		}
+	}
+
+	/**
 	 * Marker-settle the trailing uncommitted tool batch so the conversation can
 	 * come to rest. Recorded outcomes are preserved first-write-wins; every
 	 * unresolved call gets an explicit unknown-outcome error — never a
@@ -3488,6 +3562,40 @@ export class Session implements FlueSession, AgentSubmissionSession {
 		};
 	}
 
+	private async recordedInterruptedTools(
+		submissionId: string,
+	): Promise<ReadonlyArray<InterruptedToolCallRef>> {
+		const conversation = await this.requireConversation();
+		const interrupted: InterruptedToolCallRef[] = [];
+		for (const entry of getActiveConversationPath(conversation)) {
+			if (
+				entry.type !== 'message' ||
+				entry.submissionId !== submissionId ||
+				entry.message.role !== 'assistant'
+			) {
+				continue;
+			}
+			for (const call of entry.message.content) {
+				if (call.type !== 'toolCall') continue;
+				const result = conversation.entries.get(toolResultEntryId(entry.id, call.id));
+				if (result?.type !== 'message' || result.message.role !== 'toolResult') continue;
+				const repair = await this.conversationWriter.getRecord(
+					`record_tool_repair_outcome_${encodeCanonicalId(entry.id)}_${encodeCanonicalId(call.id)}`,
+				);
+				if (
+					repair?.type === 'tool_outcome' &&
+					repair.conversationId === this.conversationId &&
+					repair.toolName === call.name &&
+					repair.isError &&
+					result.message.isError
+				) {
+					interrupted.push({ name: call.name, id: call.id });
+				}
+			}
+		}
+		return interrupted;
+	}
+
 	async recordSubmissionTerminal(
 		input: AgentSubmissionInterruption,
 	): Promise<ReadonlyArray<InterruptedToolCallRef>> {
@@ -3498,9 +3606,11 @@ export class Session implements FlueSession, AgentSubmissionSession {
 		// contract of terminalization, not a caller responsibility: every
 		// terminal path (retry exhaustion, timeout, post-input interruption,
 		// abort) routes through here.
-		const interruptedTools = await this.settleDanglingConversationState({
-			submissionId: input.submissionId,
-		});
+		await this.settleDanglingConversationState({ submissionId: input.submissionId });
+		// Abort repair can be committed by the attempt's Session before terminal
+		// cleanup opens this fresh one. Recover interrupted IDs from deterministic
+		// repair records rather than relying on in-memory handoff or result text.
+		const interruptedTools = await this.recordedInterruptedTools(input.submissionId);
 		let body = input.message;
 		if (interruptedTools.length > 0) {
 			const toolList = interruptedTools.map((t) => `  - ${t.name} (${t.id})`).join('\n');
