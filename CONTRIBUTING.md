@@ -88,7 +88,19 @@ After publishing, allow time for every package to become visible on the npm regi
 npm view @flue/cli@<version> version
 npm view @flue/runtime@<version> version
 npm view @flue/sdk@<version> version
-pnpm dlx @flue/cli@<version> docs read guide/sandboxes
+pnpm test:package-docs --version <version>
 ```
 
-Check every published package for unresolved workspace dependency specifiers and confirm its `latest` dist-tag points to the release. Finally, download the published `@flue/cli`, `@flue/runtime`, and `@flue/sdk` packages into a clean temporary npm project and confirm that each package contains its `docs/` tree.
+The package documentation smoke test installs the published packages into a clean temporary npm project, confirms that `@flue/cli`, `@flue/runtime`, and `@flue/sdk` contain their docs trees, and runs `flue docs read guide/sandboxes` through the installed CLI. The same command can inspect any existing live release by naming its version, for example:
+
+```sh
+pnpm test:package-docs --version 2.0.6
+```
+
+Run the test without `--version` to pack and test the current local packages before publishing:
+
+```sh
+pnpm test:package-docs
+```
+
+Check every published package for unresolved workspace dependency specifiers and confirm its `latest` dist-tag points to the release.

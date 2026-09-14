@@ -14,6 +14,7 @@
 		"build:docs": "node scripts/build-docs.mjs",
 		"test": "turbo test",
 		"test:integration": "pnpm --dir packages/vite run test:integration:cloudflare",
+		"test:package-docs": "node scripts/smoke-test-package-docs.mjs",
 		"check": "turbo run build check:lint check:types && turbo run test",
 		"check:lint": "biome lint . && knip",
 		"check:knip": "knip",
