@@ -273,6 +273,10 @@ function toolResultText(value: AgentToolResult<any>): unknown {
 	return content;
 }
 
+function truncatedToolCallError(toolName: string): string {
+	return `Tool call "${toolName}" was not executed: the response hit the output token limit, so its arguments may be truncated. Re-issue the tool call with complete arguments.`;
+}
+
 type ProviderTextOrImageContent = Exclude<UserMessage['content'], string>[number];
 type ProviderContentBlock =
 	| ProviderTextOrImageContent
@@ -2808,18 +2812,48 @@ export class Session implements FlueSession, AgentSubmissionSession {
 			}
 			return;
 		}
-		// Subagent recovery (Model B): resolve any unresolved `task` calls in this
-		// batch by resuming their in-flight children in-process, BEFORE the atomic
-		// commit, so the committed outcome is the real child result rather than an
-		// interrupted marker. Sequential and pre-commit by design (see plan §P1.4).
-		const resolvedOutcomes = await this.resumeUnresolvedTaskCalls(conversation, partial, signal);
-		await this.resumeDurableToolCalls(conversation, partial, signal, resolvedOutcomes);
+		// A length-truncated call was deliberately NOT executed by Pi because its
+		// salvaged arguments may be incomplete. Recreate Pi's synthetic failures
+		// during repair; never route these calls through task or durable-tool
+		// recovery, which could execute the unsafe arguments after a restart.
+		let resolvedOutcomes: Map<string, ConversationRecord>;
+		if (partial.assistant.stopReason === 'length') {
+			resolvedOutcomes = new Map(
+				partial.toolCalls.map((toolCall) => [
+					toolCall.id,
+					this.truncatedToolCallOutcomeRecord(partial.entryId, toolCall),
+				]),
+			);
+		} else {
+			// Subagent recovery (Model B): resolve any unresolved `task` calls in this
+			// batch by resuming their in-flight children in-process, BEFORE the atomic
+			// commit, so the committed outcome is the real child result rather than an
+			// interrupted marker. Sequential and pre-commit by design (see plan §P1.4).
+			resolvedOutcomes = await this.resumeUnresolvedTaskCalls(conversation, partial, signal);
+			await this.resumeDurableToolCalls(conversation, partial, signal, resolvedOutcomes);
+		}
 		await this.appendRepairedToolResultBatch(
 			partial.entryId,
 			partial.toolCalls,
 			conversation,
 			resolvedOutcomes,
 		);
+	}
+
+	private truncatedToolCallOutcomeRecord(
+		assistantEntryId: string,
+		toolCall: { id: string; name: string },
+	): ConversationRecord {
+		const key = `${encodeCanonicalId(assistantEntryId)}_${encodeCanonicalId(toolCall.id)}`;
+		return {
+			...this.canonicalEnvelope('tool_outcome', `record_tool_truncated_outcome_${key}`),
+			type: 'tool_outcome',
+			assistantMessageId: assistantEntryId,
+			toolCallId: toolCall.id,
+			toolName: toolCall.name,
+			isError: true,
+			content: [{ type: 'text', text: truncatedToolCallError(toolCall.name) }],
+		};
 	}
 
 	/**
@@ -3109,14 +3143,14 @@ export class Session implements FlueSession, AgentSubmissionSession {
 		conversation: ReducedConversationState,
 		resolved: Map<string, ConversationRecord>,
 	): Promise<void> {
-		// The commit invariant demands the toolUse assistant still be the leaf
+		// The commit invariant demands the tool-call assistant still be the leaf
 		// (the reducer would reject the commit anyway) — a buried batch cannot
 		// be repaired, and a silent skip here would resume into a turn replay
 		// that re-executes recorded tool calls. `settleTrailingToolBatch`
 		// pre-checks this exact condition before calling.
 		if (conversation.activeLeafId !== assistantEntryId) {
 			throw new Error(
-				'[flue] Cannot repair the trailing tool batch: its toolUse assistant is no longer the conversation leaf — an entry was appended before repair.',
+				'[flue] Cannot repair the trailing tool batch: its tool-call assistant is no longer the conversation leaf — an entry was appended before repair.',
 			);
 		}
 		const finalToolCall = toolCalls.at(-1);
@@ -3351,7 +3385,7 @@ export class Session implements FlueSession, AgentSubmissionSession {
 	 * settled with interrupted markers.
 	 *
 	 * Settleable by construction: `tool_results_committed` is all-or-nothing,
-	 * so a partial batch is always uncommitted and its toolUse assistant is
+	 * so a partial batch is always uncommitted and its tool-call assistant is
 	 * still the active leaf (nothing can follow it until commit), which
 	 * satisfies the commit-parent invariant. Deliberately NOT run at resume
 	 * entry — a resumed attempt's trailing batch is live work that
@@ -5275,7 +5309,7 @@ export class Session implements FlueSession, AgentSubmissionSession {
 	 * Repair phase of the resume seam: classify the persisted state after the
 	 * input and repair the conversation TAIL — upgrade a continuable aborted
 	 * partial, repair a trailing (partial or unresolved) tool batch — BEFORE
-	 * anything else appends. Repair requires the interrupted toolUse assistant
+	 * anything else appends. Repair requires the interrupted tool-call assistant
 	 * (or aborted partial) to still be the conversation leaf, so at every
 	 * ownership seam the order is converge → repair → only then append/steer/
 	 * drive; structural convergence (`materializeGhostStream`) is the only
