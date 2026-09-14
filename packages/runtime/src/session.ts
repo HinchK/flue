@@ -1,4 +1,5 @@
 import type { McpUnavailableConnection } from './mcp-types.ts';
+import { modelContextCompactionFields } from './model-request-info.ts';
 /**
  * Internal session implementation. Not exported publicly — user code receives
  * the facade from `createPublicSession()`, which exposes exactly the
@@ -736,6 +737,8 @@ export class Session implements FlueSession, AgentSubmissionSession {
 	private activeTurnId: string | undefined;
 	/** Per-turn request telemetry, set at `turn_request` and cleared at the turn's end. */
 	private modelRequests = new Map<string, { info: ModelRequestInfo; startedAt: number }>();
+	/** Whether the current effective agent context includes a canonical compaction summary. */
+	private contextCompacted = false;
 	private activeTasks = new Set<Session>();
 	private activeActionHarnesses = new Set<ActionHarness>();
 	private delegationDepth: number;
@@ -2082,6 +2085,7 @@ export class Session implements FlueSession, AgentSubmissionSession {
 
 	private modelRequestInfo(
 		model: Model<any> | undefined,
+		purpose: 'agent' | 'compaction' | 'compaction_prefix',
 		options?: SimpleStreamOptions,
 	): ModelRequestInfo {
 		if (!model) throw new Error('[flue] Missing configured model for turn telemetry.');
@@ -2096,6 +2100,10 @@ export class Session implements FlueSession, AgentSubmissionSession {
 			reasoningLevel: options?.reasoning,
 			maxTokens: options?.maxTokens,
 			temperature: options?.temperature,
+			// Persistent context property, not a "just compacted" pulse. Internal
+			// summarization calls never carry it, even when compacting an already
+			// compacted conversation.
+			...modelContextCompactionFields(purpose, this.contextCompacted),
 		};
 	}
 
@@ -2115,7 +2123,7 @@ export class Session implements FlueSession, AgentSubmissionSession {
 			description: tool.description,
 			parameters: tool.parameters,
 		}));
-		const request = this.modelRequestInfo(model, options);
+		const request = this.modelRequestInfo(model, purpose, options);
 		this.modelRequests.set(turnId, { info: request, startedAt: Date.now() });
 		this.emit({
 			type: 'turn_request',
@@ -2513,7 +2521,7 @@ export class Session implements FlueSession, AgentSubmissionSession {
 						}
 						const request =
 							this.modelRequests.get(turnId)?.info ??
-							this.modelRequestInfo(this.agentLoop.state.model);
+							this.modelRequestInfo(this.agentLoop.state.model, 'agent');
 						this.emitTurn(turnId, 'agent', event.message, request);
 						this.modelRequests.delete(turnId);
 					}
@@ -4724,6 +4732,7 @@ export class Session implements FlueSession, AgentSubmissionSession {
 			},
 		});
 		this.agentLoop.state.messages = messages;
+		this.contextCompacted = getLatestConversationCompaction(conversation) !== undefined;
 	}
 
 	// ─── Model-turn recovery and compaction ───────────────────────────────────
