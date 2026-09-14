@@ -107,6 +107,11 @@ import {
 	redactObservationDetailImages,
 } from './event-redaction.ts';
 import { type FlueExecutionContext, interceptExecution } from './execution-interceptor.ts';
+import {
+	EMPTY_HARNESS_TOOL_LINEAGE,
+	enterHarnessTool,
+	type HarnessToolLineage,
+} from './harness-tool-lineage.ts';
 import { resolveSubagentDefinition } from './hooks/render.ts';
 import type { HookStateBuffer, HookStateWrite } from './hooks/use-persistent-state.ts';
 import {
@@ -373,6 +378,7 @@ export type CreateTaskSession = (options: CreateTaskSessionOptions) => Promise<S
 interface CreateActionHarnessOptions {
 	invocationId: string;
 	depth: number;
+	activeHarnessTools: HarnessToolLineage;
 	signal?: AbortSignal;
 	executionContext: FlueExecutionContext;
 	eventCallback?: FlueEventInputCallback;
@@ -400,6 +406,8 @@ interface SessionInitOptions {
 	config: AgentConfig;
 	onAgentEvent?: FlueEventInputCallback;
 	agentTools?: ToolDefinition[];
+	/** Harness tools already active on this delegation branch. */
+	activeHarnessTools?: HarnessToolLineage;
 	/** Optional MCP connections that failed to resolve at initialization. */
 	mcpUnavailable?: McpUnavailableConnection[];
 	delegationDepth?: number;
@@ -705,6 +713,7 @@ export class Session implements FlueSession, AgentSubmissionSession {
 	private modelRetryAbortController: AbortController | undefined;
 	private eventCallback: FlueEventInputCallback | undefined;
 	private agentTools: ToolDefinition[];
+	private activeHarnessTools: HarnessToolLineage;
 	/**
 	 * Optional MCP connections that failed to resolve when this submission
 	 * initialized, announced once per session before the model's first turn.
@@ -2174,6 +2183,7 @@ export class Session implements FlueSession, AgentSubmissionSession {
 			rm: (path, rmOptions) => this.env.rm(path, rmOptions),
 		};
 		this.agentTools = options.agentTools ?? [];
+		this.activeHarnessTools = options.activeHarnessTools ?? EMPTY_HARNESS_TOOL_LINEAGE;
 		this.mcpUnavailable = options.mcpUnavailable ?? [];
 		this.delegationDepth = options.delegationDepth ?? 0;
 		this.createTaskSession = options.createTaskSession;
@@ -2929,7 +2939,9 @@ export class Session implements FlueSession, AgentSubmissionSession {
 		let harness: ActionHarness | undefined;
 		try {
 			const invocationId = toolDef.harness ? generateInvocationId() : undefined;
-			harness = invocationId ? this.createInvocationHarness(invocationId, signal) : undefined;
+			harness = invocationId
+				? this.createInvocationHarness(invocationId, signal, toolDef)
+				: undefined;
 			const parsed = parseToolInput(toolDef, params, signal, {
 				log,
 				toolCallId,
@@ -3809,7 +3821,11 @@ export class Session implements FlueSession, AgentSubmissionSession {
 	 * Callers must remove it from {@link activeActionHarnesses} and `close()`
 	 * it when the run settles.
 	 */
-	private createInvocationHarness(invocationId: string, signal?: AbortSignal): ActionHarness {
+	private createInvocationHarness(
+		invocationId: string,
+		signal?: AbortSignal,
+		tool?: ToolDefinition,
+	): ActionHarness {
 		if (!this.createActionHarness) {
 			throw new Error('[flue] This session cannot run harness-connected tools.');
 		}
@@ -3819,6 +3835,9 @@ export class Session implements FlueSession, AgentSubmissionSession {
 		const harness = this.createActionHarness({
 			invocationId,
 			depth: this.delegationDepth + 1,
+			activeHarnessTools: tool
+				? enterHarnessTool(this.activeHarnessTools, tool)
+				: this.activeHarnessTools,
 			signal,
 			executionContext: this.executionIdentity,
 			eventCallback: this.eventCallback,
@@ -3909,7 +3928,7 @@ export class Session implements FlueSession, AgentSubmissionSession {
 						// never collide with a prior attempt's retained conversations).
 						const invocationId = toolDef.harness ? generateInvocationId() : undefined;
 						const harness = invocationId
-							? this.createInvocationHarness(invocationId, signal)
+							? this.createInvocationHarness(invocationId, signal, toolDef)
 							: undefined;
 						try {
 							const context = harness
