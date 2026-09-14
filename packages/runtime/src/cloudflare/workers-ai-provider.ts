@@ -630,13 +630,14 @@ function streamCloudflareWorkersAi(
 				const delta = choice.delta;
 				if (!delta) continue;
 
-				if (delta.content !== null && delta.content !== undefined && delta.content.length > 0) {
+				const textDelta = normalizeAssistantContent(delta.content);
+				if (textDelta !== undefined && textDelta.length > 0) {
 					const block = ensureTextBlock();
-					block.text += delta.content;
+					block.text += textDelta;
 					stream.push({
 						type: 'text_delta',
 						contentIndex: indexOf(block),
-						delta: delta.content,
+						delta: textDelta,
 						partial: output,
 					});
 				}
@@ -1152,6 +1153,19 @@ async function assertSuccessfulBindingResponse(response: Response): Promise<void
 		status: response.status,
 		statusText: response.statusText,
 		body,
+	});
+}
+
+function normalizeAssistantContent(value: unknown): string | undefined {
+	if (value === null || value === undefined) return undefined;
+	if (typeof value === 'string') return value;
+	const received = Array.isArray(value)
+		? 'an array'
+		: typeof value === 'object'
+			? 'an object'
+			: `a value of type ${typeof value}`;
+	throw new CloudflareAIBindingError({
+		message: `Cloudflare AI binding returned invalid choices[0].delta.content: expected a string, null, or an omitted field; received ${received}.`,
 	});
 }
 
