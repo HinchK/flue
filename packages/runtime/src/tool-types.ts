@@ -1,5 +1,4 @@
 import type * as v from 'valibot';
-import type { JsonValue } from './json-snapshot.ts';
 import type { FlueHarness, FlueLogger } from './types.ts';
 
 export type ToolInputSchema = v.GenericSchema<Record<string, unknown>, unknown>;
@@ -65,6 +64,20 @@ export type ToolContext<
 	([D] extends [true] ? { readonly step: ToolStep } : Record<never, never>);
 
 /**
+ * A JSON-serializable tool output before the runtime snapshots it. Object
+ * properties may be undefined because JSON.stringify omits them — notably,
+ * TypeScript represents keys absent from one member of an inferred object
+ * union as optional undefined properties. Undefined remains invalid in arrays.
+ */
+type ToolRunOutputValue =
+	| null
+	| boolean
+	| number
+	| string
+	| readonly ToolRunOutputValue[]
+	| { [key: string]: ToolRunOutputValue | undefined };
+
+/**
  * The canonical `run` return shape: `output` is the tool's result value
  * (validated against the declared `output` schema, and what the model sees
  * serialized as JSON), and `terminate: true` ends the agent's turn after the
@@ -75,7 +88,7 @@ export type ToolContext<
  */
 export type ToolRunEnvelope<S extends ToolOutputSchema | undefined> = S extends ToolOutputSchema
 	? { output: v.InferInput<S>; terminate?: boolean }
-	: { output?: JsonValue; terminate?: boolean };
+	: { output?: ToolRunOutputValue | undefined; terminate?: boolean };
 
 // Bare-string sugar: `return 'text'` means `return { output: 'text' }`. The
 // string arm exists only where a string is a valid output to begin with (no
