@@ -12,6 +12,11 @@ const emptySnapshot: AgentSnapshot = {
 	settlements: emptyAgentState.settlements,
 };
 const emptySubscribe = () => () => {};
+const getEmptySnapshot = (): AgentSnapshot => emptySnapshot;
+const dormantSendMessage = async (): Promise<void> => {
+	throw new Error('useFlueAgent() cannot send without a conversation url');
+};
+const dormantRefresh = (): void => {};
 
 export interface UseFlueAgentOptions {
 	/**
@@ -76,16 +81,12 @@ export function useFlueAgent(options: UseFlueAgentOptions = {}): UseFlueAgentRes
 	}, [session]);
 	const snapshot = useSyncExternalStore(
 		session?.subscribe ?? emptySubscribe,
-		session?.getSnapshot ?? (() => emptySnapshot),
-		() => emptySnapshot,
+		session?.getSnapshot ?? getEmptySnapshot,
+		getEmptySnapshot,
 	);
 	return {
 		...snapshot,
-		sendMessage: session
-			? session.sendMessage.bind(session)
-			: async () => {
-					throw new Error('useFlueAgent() cannot send without a conversation url');
-				},
-		refresh: session ? session.refresh : () => {},
+		sendMessage: session?.sendMessage ?? dormantSendMessage,
+		refresh: session?.refresh ?? dormantRefresh,
 	};
 }

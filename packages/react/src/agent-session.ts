@@ -56,7 +56,7 @@ export class AgentSession {
 		this.observation?.refresh();
 	};
 
-	async sendMessage(message: string, options: SendMessageOptions = {}): Promise<void> {
+	sendMessage = async (message: string, options: SendMessageOptions = {}): Promise<void> => {
 		const localId = `local:${++this.localId}`;
 		this.dispatch({ type: 'local_send_submitted', localId, message, images: options.images });
 		try {
@@ -74,7 +74,7 @@ export class AgentSession {
 			this.dispatch({ type: 'local_send_failed', localId, error: normalized });
 			throw error;
 		}
-	}
+	};
 
 	dispose(): void {
 		if (!this.active) return;
