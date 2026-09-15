@@ -4,7 +4,7 @@
 
 ### Patch Changes
 
-- d45e52a: Installed packages once again include the bundled Flue documentation, so commands such as `flue docs read guide/sandboxes` work out of the box.
-- Updated dependencies [d45e52a]
+- 1f6238a: Installed packages once again include the bundled Flue documentation, so commands such as `flue docs read guide/sandboxes` work out of the box.
+- Updated dependencies [b8c07bb, 4b436f7, c1ceacd, c663410, 96b8f0b, 1f6238a, da7c085, 21c6240, 2227864, 68dbb37, 7527739, 750f1f1, 4a86eaa, d830034]
   - @flue/runtime@2.0.7
   - @flue/vite@2.0.7

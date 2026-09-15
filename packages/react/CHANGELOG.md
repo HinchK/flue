@@ -4,6 +4,6 @@
 
 ### Patch Changes
 
-- d45e52a: Fix `useFlueAgent` callbacks changing identity on every store update — they now stay stable until the underlying session changes, preventing unnecessary re-renders and stale-effect churn.
-- Updated dependencies [d45e52a]
+- 6e62278: Fix `useFlueAgent` callbacks changing identity on every store update — they now stay stable until the underlying session changes, preventing unnecessary re-renders and stale-effect churn.
+- Updated dependencies [1f6238a, ef0c89f]
   - @flue/sdk@2.0.7

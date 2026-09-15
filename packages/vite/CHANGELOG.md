@@ -4,6 +4,6 @@
 
 ### Patch Changes
 
-- d45e52a: Markdown importers written in JSX (`.tsx`/`.jsx`) are now scanned correctly. SKILL.md imports that belong to the Agents SDK's virtual skill registry are left to its owning plugin instead of being claimed by Flue's transform.
-- Updated dependencies [d45e52a]
+- d830034: Markdown importers written in JSX (`.tsx`/`.jsx`) are now scanned correctly. SKILL.md imports that belong to the Agents SDK's virtual skill registry are left to its owning plugin instead of being claimed by Flue's transform.
+- Updated dependencies [b8c07bb, 4b436f7, c1ceacd, c663410, 96b8f0b, 1f6238a, da7c085, 21c6240, 2227864, 68dbb37, 7527739, 750f1f1, 4a86eaa]
   - @flue/runtime@2.0.7
