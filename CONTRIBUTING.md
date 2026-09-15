@@ -104,3 +104,14 @@ pnpm test:package-docs
 ```
 
 Check every published package for unresolved workspace dependency specifiers and confirm its `latest` dist-tag points to the release.
+
+Finally, tag the release commit and push the tag. The release commit is the `v<version>` version-bump commit (it bumps every public package and adds the `CHANGELOG.md` entry) that was created before publishing. Use a lightweight tag matching the convention of prior releases (e.g. `v2.0.3`), not an annotated tag:
+
+```sh
+git tag v2.0.6
+# confirm it points at the version-bump commit:
+git rev-parse v2.0.6
+git push origin v2.0.6
+```
+
+Tagging is part of the release, not an afterthought: the `v<version>` tag is how consumers and tooling locate a release in git history, and it is easy to miss if it is not written down here.
