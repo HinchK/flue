@@ -1,18 +1,29 @@
 ---
 title: Cloudflare Sandbox
 description: Run Flue agent work inside Cloudflare container-backed sandboxes.
-lastReviewedAt: 2026-09-14
+lastReviewedAt: 2026-09-16
 ---
+
+import CopyPrompt from '../../../../components/docs/CopyPrompt.astro';
 
 Cloudflare Sandbox uses `@cloudflare/sandbox` to provide a container-backed Linux environment to a Flue application deployed on Cloudflare. This integration is platform-native: it is not an adapter module for a Node-target application.
 
 ## Quickstart
 
-Add container-backed Linux sandbox capability to an existing Flue project with the [Cloudflare Sandbox](https://developers.cloudflare.com/sandbox) blueprint. Run the following command in your terminal or coding agent of choice:
+Add container-backed Linux sandbox capability to an existing Flue project with the [Cloudflare Sandbox](https://developers.cloudflare.com/sandbox) blueprint.
 
-```bash
-flue add sandbox cloudflare
-```
+<CopyPrompt text="Run `flue add sandbox cloudflare` and follow the blueprint to add a Cloudflare Sandbox to this Flue project." />
+
+Copy this prompt into your coding agent. The blueprint the agent fetches is an implementation guide, not an installer — the agent reads it, then inspects and modifies your project. It may:
+
+- Install `@cloudflare/sandbox`.
+- Add or update `cloudflare.ts` in the Flue source root.
+- Add the Sandbox Durable Object binding and a new migration entry to `wrangler.jsonc`.
+- Create or update the container `Dockerfile`.
+- Modify your Flue agent to obtain the sandbox with `getSandbox(...)` and attach it with `useSandbox(...)`.
+- Inspect the existing project structure and avoid overwriting incompatible setup.
+
+If your project currently targets Node, the blueprint will stop and confirm with you before migrating the whole project to the Cloudflare target — Cloudflare Sandbox only runs inside a Worker.
 
 Before you start, check two prerequisites:
 
@@ -31,13 +42,13 @@ import { cloudflareSandbox } from '@flue/runtime/cloudflare';
 import { getSandbox } from '@cloudflare/sandbox';
 
 interface Env {
-  Sandbox: DurableObjectNamespace;
+	Sandbox: DurableObjectNamespace;
 }
 
 export function CodingAgent({ id }: AgentProps) {
-  useModel('anthropic/claude-opus-4-7');
-  const { Sandbox } = env as unknown as Env;
-  useSandbox(cloudflareSandbox(getSandbox(Sandbox, id)));
+	useModel('anthropic/claude-opus-4-7');
+	const { Sandbox } = env as unknown as Env;
+	useSandbox(cloudflareSandbox(getSandbox(Sandbox, id)));
 }
 ```
 
@@ -72,13 +83,13 @@ import { type AgentProps, useModel, useSandbox } from '@flue/runtime';
 import { cloudflareSandbox } from '@flue/runtime/cloudflare';
 
 interface Env {
-  Sandbox: DurableObjectNamespace;
+	Sandbox: DurableObjectNamespace;
 }
 
 export function Assistant({ id }: AgentProps) {
-  useModel('anthropic/claude-sonnet-4-6');
-  const { Sandbox } = env as unknown as Env;
-  useSandbox(cloudflareSandbox(getSandbox(Sandbox, id)), { cwd: '/workspace' });
+	useModel('anthropic/claude-sonnet-4-6');
+	const { Sandbox } = env as unknown as Env;
+	useSandbox(cloudflareSandbox(getSandbox(Sandbox, id)), { cwd: '/workspace' });
 }
 ```
 
