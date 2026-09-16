@@ -4,14 +4,7 @@
 
 ### Patch Changes
 
-- Updated dependencies [aaefa69]
-- Updated dependencies [3d7a0ef]
-- Updated dependencies [3a6242f]
-- Updated dependencies [9d649bc]
-- Updated dependencies [2d800f5]
-- Updated dependencies [3f3daae]
-- Updated dependencies [28e1afe]
-- Updated dependencies [c5b1e25]
+- Updated dependencies [aaefa69, 3d7a0ef, 3a6242f, 9d649bc, 2d800f5, 3f3daae, 28e1afe, c5b1e25]
   - @flue/runtime@2.0.8
 
 ## 2.0.7
