@@ -94,6 +94,7 @@ function safeSlice(value: string, end: number): string {
  */
 function truncateArray(value: unknown[], budget: number): unknown {
 	const messageShaped = isMessageArray(value);
+	const outputShaped = isOutputMessageArray(value);
 	const items = [...value];
 	let droppedCount = 0;
 	let droppedBytes = 0;
@@ -101,12 +102,17 @@ function truncateArray(value: unknown[], budget: number): unknown {
 		const removed = items.shift();
 		droppedCount += 1;
 		droppedBytes += (measure(removed) ?? 0) + 1;
-		const candidate = [sentinelItem(messageShaped, droppedCount, droppedBytes), ...items];
+		const candidate = [
+			sentinelItem(messageShaped, outputShaped, droppedCount, droppedBytes),
+			...items,
+		];
 		const size = measure(candidate);
 		if (size !== undefined && size <= budget) return candidate;
 	}
 	const sentinel =
-		droppedCount > 0 ? sentinelItem(messageShaped, droppedCount, droppedBytes) : undefined;
+		droppedCount > 0
+			? sentinelItem(messageShaped, outputShaped, droppedCount, droppedBytes)
+			: undefined;
 	const overhead = (sentinel ? (measure(sentinel) ?? 0) + 1 : 0) + 4;
 	// Shrink the last element only when a workable slice of the budget is left
 	// beside the sentinel, and re-measure the result: nested fitWithin() calls bottom
@@ -114,17 +120,37 @@ function truncateArray(value: unknown[], budget: number): unknown {
 	const innerBudget = budget - overhead;
 	if (innerBudget >= MIN_LEAF_BYTES) {
 		const shrunk = fitWithin(items[0], innerBudget);
-		const candidate = sentinel ? [sentinel, shrunk] : [shrunk];
+		// A single element that bottoms out lands a bare diagnostic string — for
+		// a message array that would violate the message-array schema, so wrap it
+		// in the shape-preserving envelope.
+		const element =
+			messageShaped && typeof shrunk === 'string'
+				? diagnosticMessage(shrunk, outputShaped)
+				: shrunk;
+		const candidate = sentinel ? [sentinel, element] : [element];
 		const size = measure(candidate);
 		if (size !== undefined && size <= budget) return candidate;
 	}
 	// Nothing fits beside the sentinel: count the last element as dropped too,
 	// and bail to the bare exceeded marker when even that sentinel is too big.
 	const allDropped = [
-		sentinelItem(messageShaped, droppedCount + 1, droppedBytes + (measure(items[0]) ?? 0) + 1),
+		sentinelItem(
+			messageShaped,
+			outputShaped,
+			droppedCount + 1,
+			droppedBytes + (measure(items[0]) ?? 0) + 1,
+		),
 	];
 	const allDroppedSize = measure(allDropped);
 	if (allDroppedSize !== undefined && allDroppedSize <= budget) return allDropped;
+	if (messageShaped) {
+		// Even the drop sentinel does not fit: emit the smallest shape-preserving
+		// message — the envelope around the bare exceeded marker — rather than a
+		// bare string that violates the message-array schema.
+		const floor = [diagnosticMessage(CONTENT_BUDGET_EXCEEDED, outputShaped)];
+		const floorSize = measure(floor);
+		if (floorSize !== undefined && floorSize <= budget) return floor;
+	}
 	return CONTENT_BUDGET_EXCEEDED;
 }
 
@@ -141,14 +167,46 @@ function isMessageArray(value: unknown[]): boolean {
 	);
 }
 
+/** An output-message array: message-shaped elements that also carry `finish_reason`. */
+function isOutputMessageArray(value: unknown[]): boolean {
+	return (
+		isMessageArray(value) &&
+		value.every((item) => typeof (item as { finish_reason?: unknown }).finish_reason === 'string')
+	);
+}
+
+/**
+ * Shape-preserving wrapper for a bare diagnostic that landed where a message
+ * belongs: `gen_ai.input.messages` / `gen_ai.output.messages` must stay an
+ * array of `{ role, parts }` messages (output messages also carry
+ * `finish_reason`), and a bare string would violate that contract.
+ */
+function diagnosticMessage(diagnostic: string, outputShaped: boolean): unknown {
+	return {
+		role: 'flue',
+		...(outputShaped ? { finish_reason: 'error' } : {}),
+		parts: [{ type: 'text', content: diagnostic }],
+	};
+}
+
 /**
  * `role: 'flue'` is deliberate: honest, filterable, and never confused with a
- * real conversation turn.
+ * real conversation turn. Output-message fallbacks keep the schema's required
+ * `finish_reason`.
  */
-function sentinelItem(messageShaped: boolean, count: number, bytes: number): unknown {
+function sentinelItem(
+	messageShaped: boolean,
+	outputShaped: boolean,
+	count: number,
+	bytes: number,
+): unknown {
 	const text = `[flue] ${count} ${messageShaped ? 'messages' : 'items'} omitted (${bytes} bytes) to fit the attribute budget`;
 	if (!messageShaped) return text;
-	return { role: 'flue', parts: [{ type: 'text', content: text }] };
+	return {
+		role: 'flue',
+		...(outputShaped ? { finish_reason: 'error' } : {}),
+		parts: [{ type: 'text', content: text }],
+	};
 }
 
 /**

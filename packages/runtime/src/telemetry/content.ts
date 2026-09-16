@@ -101,6 +101,36 @@ export interface ContentAttributeResult {
 
 const ENCODER = new TextEncoder();
 
+/** Content types whose value must stay an array of role/parts messages. */
+const MESSAGE_CONTENT_TYPES: ReadonlySet<GenAIContentType> = new Set([
+	'input_messages',
+	'output_messages',
+]);
+
+/**
+ * Shape-preserving fallback for message-array content types: the GenAI
+ * semconv schema requires `gen_ai.input.messages` / `gen_ai.output.messages`
+ * to be arrays of `{ role, parts }` messages (output messages also carry
+ * `finish_reason`). A bare diagnostic string would violate that contract, so
+ * serialization/transform failures emit the envelope instead. The envelope
+ * (~90 bytes) always fits the 128-byte minimum budget.
+ */
+function messageContentFallback(
+	diagnostic: string,
+	options: ContentAttributeOptions,
+): string | undefined {
+	return serialize(
+		[
+			{
+				role: 'flue',
+				parts: [{ type: 'text', content: diagnostic }],
+				...(options.contentType === 'output_messages' ? { finish_reason: 'error' } : {}),
+			},
+		],
+		options,
+	);
+}
+
 export function contentAttribute(
 	policy: ContentOption | undefined,
 	content: unknown,
@@ -117,7 +147,12 @@ export function contentAttribute(
 		try {
 			value = policy.transform(structuredClone(content), contentScope(event, options));
 		} catch {
-			return { value: CONTENT_TRANSFORM_FAILED };
+			return MESSAGE_CONTENT_TYPES.has(options.contentType)
+				? {
+						value:
+							messageContentFallback(CONTENT_TRANSFORM_FAILED, options) ?? CONTENT_TRANSFORM_FAILED,
+					}
+				: { value: CONTENT_TRANSFORM_FAILED };
 		}
 		if (value === undefined) return {};
 	}
@@ -127,10 +162,21 @@ export function contentAttribute(
 			? Math.min(Math.max(Math.floor(options.maxBytes), MIN_BUDGET_BYTES), CONTENT_BUDGET_BYTES)
 			: CONTENT_BUDGET_BYTES;
 	let serialized = serialize(value, options);
-	if (serialized === undefined) return { value: CONTENT_UNSERIALIZABLE };
+	if (serialized === undefined) {
+		return MESSAGE_CONTENT_TYPES.has(options.contentType)
+			? { value: messageContentFallback(CONTENT_UNSERIALIZABLE, options) ?? CONTENT_UNSERIALIZABLE }
+			: { value: CONTENT_UNSERIALIZABLE };
+	}
 	if (ENCODER.encode(serialized).byteLength > budget) {
 		serialized = serialize(truncateContent(value, { maxBytes: budget }), options);
-		if (serialized === undefined) return { value: CONTENT_UNSERIALIZABLE };
+		if (serialized === undefined) {
+			return MESSAGE_CONTENT_TYPES.has(options.contentType)
+				? {
+						value:
+							messageContentFallback(CONTENT_UNSERIALIZABLE, options) ?? CONTENT_UNSERIALIZABLE,
+					}
+				: { value: CONTENT_UNSERIALIZABLE };
+		}
 	}
 	return { value: serialized, objectShaped };
 }
