@@ -93,7 +93,7 @@ export type { ChannelRouteDefinition } from './runtime/channel-routes.ts';
 export { createChannelRouter } from './runtime/channel-routes.ts';
 export { type FlueEventSubscriber, observe } from './runtime/events.ts';
 export { type AgentInstanceInfo, dispatch, getAgentInstance } from './runtime/flue-app.ts';
-export { setProvider } from './runtime/providers.ts';
+export { isDynamicModel, setProvider } from './runtime/providers.ts';
 export type { AgentIdentityBinding } from './runtime/registration.ts';
 export { __flueBindAgentModule } from './runtime/registration.ts';
 export {
