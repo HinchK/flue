@@ -368,6 +368,8 @@ function isAbortError(error: unknown): boolean {
 interface CloudflareBindingStreamConfig {
 	gateway: CloudflareGatewayOptions | undefined;
 	streamIdleTimeoutMs: number;
+	/** Anthropic prompt-cache retention for the binding's Anthropic path. */
+	cacheRetention: 'none' | 'short' | 'long';
 }
 
 /**
@@ -770,7 +772,7 @@ function streamCloudflareAnthropicAi(
 	options?: SimpleStreamOptions,
 ) {
 	warnZeroMetadataGatewayModel(model);
-	const anthropicModel = toAnthropicGatewayModel(model);
+	const anthropicModel = toAnthropicGatewayModel(model, binding.cacheRetention);
 	const client = createAnthropicBindingClient(ai, model, options, binding);
 
 	// pi-ai's low-level stream writes `output_config: { effort }` only when
@@ -787,7 +789,7 @@ function streamCloudflareAnthropicAi(
 	const anthropicOptions: AnthropicOptions = {
 		...options,
 		client,
-		cacheRetention: 'none',
+		cacheRetention: binding.cacheRetention,
 		thinkingEnabled: Boolean(options?.reasoning),
 		...(effort ? { effort } : {}),
 		onPayload: async (payload, payloadModel) => {
@@ -1097,14 +1099,25 @@ function unsupportedWireFormatStream(model: Model<Api>) {
 	return stream;
 }
 
-function toAnthropicGatewayModel(model: Model<Api>): Model<'anthropic-messages'> {
+function toAnthropicGatewayModel(
+	model: Model<Api>,
+	cacheRetention: 'none' | 'short' | 'long',
+): Model<'anthropic-messages'> {
+	// The binding dialect forwards `cache_control` on message blocks and tools
+	// to Anthropic, so tool markers are safe to emit when caching is on; the
+	// 1-hour TTL (`supportsLongCacheRetention`) was not verified against the
+	// binding, so 'long' falls back to the 5-minute TTL via pi's own compat
+	// check. `sendSessionAffinityHeaders` is off because flue sends the
+	// affinity header itself (buildExtraHeaders) — and a stable sessionId is
+	// what makes the cache reusable across turns.
+	const caching = cacheRetention !== 'none';
 	return {
 		...model,
 		api: 'anthropic-messages',
 		baseUrl: '',
 		compat: {
 			...model.compat,
-			supportsCacheControlOnTools: false,
+			supportsCacheControlOnTools: caching,
 			supportsEagerToolInputStreaming: false,
 			supportsLongCacheRetention: false,
 			sendSessionAffinityHeaders: false,
@@ -1277,6 +1290,16 @@ export interface CloudflareAIBinding {
 	): Promise<Response | Record<string, unknown>>;
 }
 
+/**
+ * Anthropic prompt-cache retention for the binding's Anthropic path
+ * (`anthropic/…` gateway models). The Workers AI binding forwards
+ * `cache_control` on message blocks and tools to Anthropic, so opt-in caching
+ * serves repeated prefixes at the cached input rate instead of full price.
+ * `'long'` requests the 1-hour TTL where the platform supports it. Default
+ * `'none'` keeps the current behavior (no cache markers).
+ */
+export type CloudflareCacheRetention = 'none' | 'short' | 'long';
+
 export interface CloudflareBindingProviderOptions {
 	/** The captured `env.AI` reference. */
 	binding: CloudflareAIBinding;
@@ -1301,6 +1324,15 @@ export interface CloudflareBindingProviderOptions {
 	 * keepalives nor reasoning deltas stream. `0` disables the guard.
 	 */
 	streamIdleTimeoutMs?: number;
+	/**
+	 * Anthropic prompt-cache retention for `anthropic/…` models routed
+	 * through the binding. Default `'none'` matches the current behavior (no
+	 * `cache_control` markers); opt in with `'short'` (5-minute TTL) or
+	 * `'long'` (1-hour TTL where supported) to cache repeated prefixes and
+	 * pay the cached input rate on cache hits. Requires the agent to send a
+	 * stable `sessionId` so the binding can reuse the cache across turns.
+	 */
+	cacheRetention?: CloudflareCacheRetention;
 }
 
 /**
@@ -1324,6 +1356,7 @@ export function cloudflareBindingProvider(options: CloudflareBindingProviderOpti
 	const binding: CloudflareBindingStreamConfig = {
 		gateway,
 		streamIdleTimeoutMs: options.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS,
+		cacheRetention: options.cacheRetention ?? 'none',
 	};
 	const ai = options.binding as Ai;
 	const stream = (model: Model<Api>, context: Context, streamOptions?: SimpleStreamOptions) =>

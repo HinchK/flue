@@ -37,7 +37,7 @@ function anthropicSseResponse(): Response {
 	return new Response(body, { headers: { 'content-type': 'text/event-stream' } });
 }
 
-function anthropicProviderFor() {
+function anthropicProviderFor(extra?: Partial<Parameters<typeof cloudflareBindingProvider>[0]>) {
 	let recorded: Record<string, unknown> | undefined;
 	const binding = {
 		async run(_modelId: string, params: Record<string, unknown>) {
@@ -45,7 +45,11 @@ function anthropicProviderFor() {
 			return anthropicSseResponse();
 		},
 	};
-	const provider = cloudflareBindingProvider({ binding: binding as never, gateway: false });
+	const provider = cloudflareBindingProvider({
+		binding: binding as never,
+		gateway: false,
+		...(extra ?? {}),
+	});
 	const model = provider
 		.getModels()
 		.find((candidate) => candidate.id === 'anthropic/claude-opus-5');
@@ -169,5 +173,41 @@ describe('Cloudflare binding Anthropic gateway effort', () => {
 
 		expect(result.errorMessage).toBeUndefined();
 		expect(recorded()?.output_config).toBeUndefined();
+	});
+});
+
+describe('Cloudflare binding Anthropic prompt caching', () => {
+	it('defaults to cacheRetention none — no cache_control markers', async () => {
+		const { provider, model, recorded } = anthropicProviderFor();
+		await provider
+			.stream(
+				model,
+				{
+					systemPrompt: 'x',
+					messages: [{ role: 'user', content: 'hi', timestamp: 0 }],
+					tools: [],
+				},
+				{ sessionId: 'session-1' },
+			)
+			.result();
+		expect(JSON.stringify(recorded())).not.toContain('cache_control');
+	});
+
+	it('cacheRetention short emits cache_control on messages and tools', async () => {
+		const { provider, model, recorded } = anthropicProviderFor({ cacheRetention: 'short' });
+		await provider
+			.stream(
+				model,
+				{
+					systemPrompt: 'x',
+					messages: [{ role: 'user', content: 'hi', timestamp: 0 }],
+					tools: [],
+				},
+				{ sessionId: 'session-1' },
+			)
+			.result();
+		const payload = JSON.stringify(recorded());
+		expect(payload).toContain('cache_control');
+		expect(payload).toContain('"type":"ephemeral"');
 	});
 });
