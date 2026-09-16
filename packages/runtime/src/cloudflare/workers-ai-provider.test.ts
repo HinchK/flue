@@ -6,6 +6,53 @@ function sseResponse(chunks: unknown[]): Response {
 	return new Response(body, { headers: { 'content-type': 'text/event-stream' } });
 }
 
+/** A minimal valid Anthropic Messages SSE stream, with `event:` names. */
+function anthropicSseResponse(): Response {
+	const events = [
+		[
+			'message_start',
+			{
+				type: 'message_start',
+				message: { id: 'msg_1', usage: { input_tokens: 1, output_tokens: 0 } },
+			},
+		],
+		[
+			'content_block_start',
+			{ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+		],
+		[
+			'content_block_delta',
+			{ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } },
+		],
+		['content_block_stop', { type: 'content_block_stop', index: 0 }],
+		[
+			'message_delta',
+			{ type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null } },
+		],
+		['message_stop', { type: 'message_stop' }],
+	] as const;
+	const body = events
+		.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+		.join('');
+	return new Response(body, { headers: { 'content-type': 'text/event-stream' } });
+}
+
+function anthropicProviderFor() {
+	let recorded: Record<string, unknown> | undefined;
+	const binding = {
+		async run(_modelId: string, params: Record<string, unknown>) {
+			recorded = params;
+			return anthropicSseResponse();
+		},
+	};
+	const provider = cloudflareBindingProvider({ binding: binding as never, gateway: false });
+	const model = provider
+		.getModels()
+		.find((candidate) => candidate.id === 'anthropic/claude-opus-5');
+	if (!model) throw new Error('Expected an anthropic gateway catalog model');
+	return { provider, model, recorded: () => recorded };
+}
+
 function providerFor(chunks: unknown[]) {
 	const binding = {
 		async run() {
@@ -66,5 +113,61 @@ describe('Cloudflare Workers AI assistant content', () => {
 		expect(result.errorMessage).toContain(
 			`invalid choices[0].delta.content: expected a string, null, or an omitted field; received ${description}`,
 		);
+	});
+});
+
+describe('Cloudflare binding Anthropic gateway effort', () => {
+	it('maps the thinking level to output_config.effort for adaptive-thinking models', async () => {
+		const { provider, model, recorded } = anthropicProviderFor();
+		const result = await provider
+			.stream(
+				model,
+				{
+					systemPrompt: 'x',
+					messages: [{ role: 'user', content: 'hi', timestamp: 0 }],
+					tools: [],
+				},
+				{ reasoning: 'low' },
+			)
+			.result();
+
+		expect(result.errorMessage).toBeUndefined();
+		expect(result.content).toEqual([{ type: 'text', text: 'hi' }]);
+		expect(recorded()).toMatchObject({
+			thinking: { type: 'adaptive', display: 'summarized' },
+			output_config: { effort: 'low' },
+		});
+	});
+
+	it('maps xhigh through the model thinkingLevelMap', async () => {
+		const { provider, model, recorded } = anthropicProviderFor();
+		const result = await provider
+			.stream(
+				model,
+				{
+					systemPrompt: 'x',
+					messages: [{ role: 'user', content: 'hi', timestamp: 0 }],
+					tools: [],
+				},
+				{ reasoning: 'xhigh' },
+			)
+			.result();
+
+		expect(result.errorMessage).toBeUndefined();
+		expect(recorded()).toMatchObject({ output_config: { effort: 'xhigh' } });
+	});
+
+	it('omits output_config when reasoning is not set', async () => {
+		const { provider, model, recorded } = anthropicProviderFor();
+		const result = await provider
+			.stream(model, {
+				systemPrompt: 'x',
+				messages: [{ role: 'user', content: 'hi', timestamp: 0 }],
+				tools: [],
+			})
+			.result();
+
+		expect(result.errorMessage).toBeUndefined();
+		expect(recorded()?.output_config).toBeUndefined();
 	});
 });

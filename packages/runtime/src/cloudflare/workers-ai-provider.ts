@@ -14,6 +14,7 @@
  */
 import type { Ai } from '@cloudflare/workers-types';
 import type {
+	AnthropicEffort,
 	AnthropicOptions,
 	AssistantMessage,
 	Context,
@@ -22,6 +23,7 @@ import type {
 	Provider,
 	ProviderStreams,
 	SimpleStreamOptions,
+	ThinkingLevel,
 	Tool,
 	ToolCall,
 	Usage,
@@ -732,6 +734,34 @@ function streamCloudflareWorkersAi(
 	return stream;
 }
 
+/**
+ * Map a thinking level to Anthropic's adaptive-thinking effort. The binding
+ * path calls pi-ai's low-level stream directly, which applies `effort` only
+ * when it is set — pi's `streamSimple` is the only path that maps `reasoning`
+ * to an effort, and this provider does not call it. Mirrors pi's
+ * `mapThinkingLevelToEffort`: a string in the model's `thinkingLevelMap` wins;
+ * otherwise `minimal`/`low` map to `low`, `medium` to `medium`, and everything
+ * else to `high`.
+ */
+function mapThinkingLevelToEffort(
+	model: Model<'anthropic-messages'>,
+	level: ThinkingLevel,
+): AnthropicEffort {
+	const mapped = model.thinkingLevelMap?.[level];
+	if (typeof mapped === 'string') return mapped as AnthropicEffort;
+	switch (level) {
+		case 'minimal':
+		case 'low':
+			return 'low';
+		case 'medium':
+			return 'medium';
+		case 'high':
+			return 'high';
+		default:
+			return 'high';
+	}
+}
+
 function streamCloudflareAnthropicAi(
 	ai: Ai,
 	binding: CloudflareBindingStreamConfig,
@@ -743,6 +773,15 @@ function streamCloudflareAnthropicAi(
 	const anthropicModel = toAnthropicGatewayModel(model);
 	const client = createAnthropicBindingClient(ai, model, options, binding);
 
+	// pi-ai's low-level stream writes `output_config: { effort }` only when
+	// `effort` is set — the thinking level arrives as `options.reasoning`, which
+	// only its `streamSimple` path maps to an effort. Map it here so
+	// `thinkingLevel` takes effect on adaptive-thinking models.
+	const effort =
+		options?.reasoning && anthropicModel.compat?.forceAdaptiveThinking === true
+			? mapThinkingLevelToEffort(anthropicModel, options.reasoning)
+			: undefined;
+
 	// The lazy shim types options as plain StreamOptions; the impl receives
 	// the Anthropic-specific fields (client, thinkingEnabled) verbatim.
 	const anthropicOptions: AnthropicOptions = {
@@ -750,6 +789,7 @@ function streamCloudflareAnthropicAi(
 		client,
 		cacheRetention: 'none',
 		thinkingEnabled: Boolean(options?.reasoning),
+		...(effort ? { effort } : {}),
 		onPayload: async (payload, payloadModel) => {
 			const normalized = normalizeAnthropicGatewayPayload(payload as Record<string, unknown>);
 			const overridden = await options?.onPayload?.(normalized, payloadModel);
