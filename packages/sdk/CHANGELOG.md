@@ -12,3 +12,40 @@
 
 - 1f6238a: Installed packages once again include the bundled Flue documentation, so commands such as `flue docs read guide/sandboxes` work out of the box.
 - ef0c89f: Fix delayed reconnects in `observe()`: after a stream has been healthy for a full stream lifetime, the reconnect backoff resets, so a subsequent disconnect reconnects promptly instead of applying a stale delay.
+## 2.0.6
+
+### Patch Changes
+- Published packages once again include the bundled Flue documentation.
+## 2.0.5
+
+### Patch Changes
+- Published packages once again resolve internal Flue dependencies to the release version.
+## 2.0.2
+
+### Patch Changes
+- New docs reference page: [Agent Behavior](https://flueframework.com/docs/reference/agent-behavior/).
+## 2.0.0
+
+### Patch Changes
+- The direct agent HTTP wire body is a `DeliveredMessage`.
+- Direct agent prompts are fire-and-forget only.
+- The SDK's `prompt()` is removed.
+- The SDK's `wait()` no longer resolves with a result.
+- Idempotent delivery: name a send with `idempotencyKey` and retries converge instead of duplicating turns.
+- Public conversation messages now expose typed `purpose` and `display`, plus optional `turnId` grouping and a `signal` descriptor.
+- Internally-logged error responses now carry a correlation ref.
+- Queue activity and recovery failures are first-class runtime events.
+- Instance creation data and incarnation-conditional sends.
+- In-process `observe()` now receives streaming tool-call argument deltas.
+- The SDK client gains `read(admission | submissionId, options?)` — the HTTP counterpart of the handle's `read()`.
+- Completed assistant messages now preserve their `submissionId` in conversation `history()` snapshots.
+- Documented the supported pattern for reaching a private Flue agent over a Cloudflare service binding: point the `@flue/sdk` client's `fetch` option at the binding (#408).
+- The SDK client's `read()` rejects an admission that belongs to a different conversation.
+- The SDK's `wait()` (and the new `read()`) now recognize a settlement folded into a `conversation-reset` snapshot.
+- Failed and aborted turns are now structurally detectable via a `settlement` marker on the terminal advisory.
+- A live conversation stream can no longer stall silently forever.
+- A conversation stream that is reset and regrown under a live observer is now detected and recovered automatically.
+- The SDK's `observe()` no longer treats every 401/403 as permanently fatal.
+- The settlement followers — the SDK client's `wait()` and `read()` — carry the same stall, auth, and stream-reset resilience as `observe()`.
+- The dev-mode lifecycle logger is now an `observe()` subscriber over `submission_running`/`submission_recovery`.
+- A queued submission that can never be claimed is no longer un-terminable.

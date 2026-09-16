@@ -13,3 +13,11 @@
 
 - Updated dependencies [b8c07bb, 4b436f7, c1ceacd, c663410, 96b8f0b, 1f6238a, da7c085, 21c6240, 2227864, 68dbb37, 7527739, 750f1f1, 4a86eaa]
   - @flue/runtime@2.0.7
+## 2.0.5
+
+### Patch Changes
+- Published packages once again resolve internal Flue dependencies to the release version.
+## 2.0.0
+
+### Patch Changes
+- `@flue/redis` reads `HGETALL` and `CONFIG GET` replies in both RESP2 and RESP3 shapes.
