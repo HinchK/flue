@@ -78,6 +78,17 @@ export interface CloudflareTracingOptions {
 	 * content on with the safety-net truncation alone.
 	 */
 	content?: ContentOption;
+	/**
+	 * Per-span content pool in bytes, defaulting to `CONTENT_BUDGET_BYTES`
+	 * (56 KiB, sized to workerd's 64 KiB span-attribute cap). On this backend
+	 * it is a tightening control only: workerd's span cap is a platform limit
+	 * no setting raises, so a value above the default does not ship fuller
+	 * content — the oversized write is silently dropped and can suppress the
+	 * usage, finish, and error attributes written after it. Raise the pool on
+	 * the OpenTelemetry adapter instead, for a backend without that cap. Must
+	 * be at least 128 bytes.
+	 */
+	contentBudgetBytes?: number;
 }
 
 /**
@@ -175,7 +186,7 @@ export function createCloudflareTracing(
 			const tracked: TrackedSpan = {
 				span: opened,
 				ended: false,
-				ledger: createContentLedger(),
+				ledger: createContentLedger(options.contentBudgetBytes),
 				operationKey: owner,
 				submissionId: span.submissionId,
 			};
@@ -261,7 +272,7 @@ export function createCloudflareTracing(
 	): void {
 		platform.startActiveSpan('submission_recovery', (span) => {
 			writeAttributes(
-				{ span, ended: false, ledger: createContentLedger() },
+				{ span, ended: false, ledger: createContentLedger(options.contentBudgetBytes) },
 				{
 					[FLUE_ATTR.submissionId]: event.submissionId,
 					[FLUE_ATTR.recoveryOperation]: event.operation,
@@ -578,7 +589,11 @@ export function createCloudflareTracing(
 			// One stable span name; phases distinguish by attribute so views
 			// keyed on the name survive new phases.
 			return platform.startActiveSpan('flue.coordinator', (opened) => {
-				const tracked: TrackedSpan = { span: opened, ended: false, ledger: createContentLedger() };
+				const tracked: TrackedSpan = {
+					span: opened,
+					ended: false,
+					ledger: createContentLedger(options.contentBudgetBytes),
+				};
 				if (opened.isTraced) {
 					writeAttributes(tracked, {
 						[FLUE_ATTR.coordinatorPhase]: operation.phase,
