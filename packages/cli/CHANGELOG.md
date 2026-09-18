@@ -7,13 +7,7 @@
 - 4def7b6: The OpenTelemetry ecosystem page and Cloudflare target guide now document `contentBudgetBytes` on `createOpenTelemetryInstrumentation()` / `createCloudflareTracing()`: an override for the default 56 KiB per-span content pool. Raising it ships fuller content only on backends not bound by workerd's span cap (the OpenTelemetry adapter); on the Cloudflare target it is a tightening control only, since workerd's 64 KiB span-attribute cap is a platform limit no setting raises.
 - 11e1323: The MCP guide and Agent API reference now document preserved MCP tool annotations, including how trusted applications can inspect them and why server-supplied hints are not a security boundary.
 - 12464d7: The Tools guide and agent API reference now document `timeoutMs` on tool definitions: a per-call execution bound that aborts the tool's `context.signal` and settles the call with a `ToolTimeoutError` instead of letting one hung call consume the submission's durability budget.
-- Updated dependencies [4def7b6]
-- Updated dependencies [4def7b6]
-- Updated dependencies [11e1323]
-- Updated dependencies [12464d7]
-- Updated dependencies [d9e7f5c]
-- Updated dependencies [11e1323]
-- Updated dependencies [12464d7]
+- Updated dependencies [4def7b6, 11e1323, 12464d7, d9e7f5c]
   - @flue/runtime@2.1.0
   - @flue/vite@2.1.0
 

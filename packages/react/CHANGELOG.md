@@ -24,9 +24,7 @@
 
 ### Patch Changes
 
-- Updated dependencies [4def7b6]
-- Updated dependencies [11e1323]
-- Updated dependencies [12464d7]
+- Updated dependencies [4def7b6, 11e1323, 12464d7]
   - @flue/sdk@2.1.0
 
 ## 2.0.8
